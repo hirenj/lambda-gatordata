@@ -87,13 +87,15 @@ var split_file = function split_file(filekey) {
   });
 };
 
-var splitFile = function splitFile(filekey) {
+var splitFile = function splitFile(event,context) {
   split_file(filekey).then(function(done) {
     console.log("Uploaded all components");
+    context.succeed('OK');
     // Upload the metadata at the end of a successful decomposition
   }).catch(function(err) {
     console.error(err);
     console.error(err.stack);
+    context.succeed('NOT-OK');
   });
 };
 
