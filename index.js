@@ -1,5 +1,6 @@
 var AWS = require('aws-sdk');
 var s3 = new AWS.S3({region:'us-east-1'});
+var dynamo = new AWS.DynamoDB.DocumentClient({region:'us-east-1'});
 var JSONStream = require('JSONStream');
 var fs = require('fs');
 var crypto = require('crypto');
@@ -8,7 +9,24 @@ require('es6-promise').polyfill();
 
 var bucket_name = 'test-gator';
 
-//FIXME - Path for the parsed records (key field), part of API design
+var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta) {
+  var item = {};
+  return new Promise(function(resolve,reject) {
+    dynamo.put({'TableName' :'test-datasets', 'Item' : {
+      'accessions' : meta.accessions,
+      'id' : set,
+      'group_id' : group
+    }},function(err,result) {
+      if (err) {
+        console.log("Failed Dynamodb upload",err);
+        reject(err);
+        return;
+      }
+      resolve(result);
+    });
+  });
+};
+
 var upload_data_record_s3 = function upload_data_record_s3(key,data) {
   return new Promise(function(resolve,reject) {
     var params = {
@@ -22,6 +40,7 @@ var upload_data_record_s3 = function upload_data_record_s3(key,data) {
     var options = {partSize: 15 * 1024 * 1024, queueSize: 1};
     s3.upload(params, options, function(err, data) {
       if (err) {
+        console.log("Failed uploading to S3", err);
         reject(err);
         return;
       }
@@ -75,8 +94,7 @@ var split_file = function split_file(filekey) {
   //FIXME - upload metadata as the last part of the upload, marker of done.
   //        should be part of api request
   rs.pipe(JSONStream.parse(['metadata'])).on('data',function(dat) {
-    console.log({'metadata': dat, 'accessions' : accessions });
-    upload_promises.push(Promise.resolve(true));
+    upload_promises.push(upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'accessions' : accessions}));
   });
   return new Promise(function(resolve,reject) {
     rs.on('end',function() {
@@ -89,6 +107,7 @@ var split_file = function split_file(filekey) {
 };
 
 var splitFile = function splitFile(event,context) {
+  var filekey = 'uploads/foogroup/testing';
   split_file(filekey).then(function(done) {
     console.log("Uploaded all components");
     context.succeed('OK');
