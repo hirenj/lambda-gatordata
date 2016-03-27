@@ -50,10 +50,47 @@
       },
       "DependsOn" : "LambdaSplitFilesRole"
     },
+    "readAllData" : {
+      "Type" : "AWS::Lambda::Function",
+      "Properties" : {
+        "Code" : {
+          "ZipFile": { "Fn::Join": ["", [
+            "exports.splitFile = function(event, context) {",
+            "  context.succeed('OK');",
+            "};"
+          ]]}
+        },
+        "Description" : "readAllData",
+        "Handler" : "index.readAllData",
+        "Role" : {"Fn::GetAtt" : ["LambdaReadAllDataRole", "Arn"] },
+        "Runtime" : "nodejs",
+        "MemorySize" : 128,
+        "Timeout" : 3
+      },
+      "DependsOn" : "LambdaReadAllDataRole"
+    },
     "LambdaSplitFilesRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
         "ManagedPolicyArns" : [ { "Ref" : "ReadUploaded" }, { "Ref" : "WriteDatasets" }],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      }
+    },
+    "LambdaReadAllDataRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "ManagedPolicyArns" : [ { "Ref" : "ReadDatasets" }],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
@@ -130,6 +167,33 @@
               "Effect": "Allow",
               "Action": [
                   "dynamodb:PutItem",
+                  "dynamodb:GetItem"
+              ],
+              "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "datasets" } ] ]}
+            }
+          ]
+        }
+      }
+    },
+    "ReadDatasets": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "Read datasets",
+        "PolicyDocument" : {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:GetObject"
+              ],
+              "Resource": [
+                { "Fn::Join" :  [ "", [ "arn:aws:s3:::", { "Ref" : "AWS::StackName" }, "-gator/data/latest/*" ] ] }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
                   "dynamodb:GetItem"
               ],
               "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "datasets" } ] ]}

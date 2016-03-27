@@ -9,7 +9,7 @@ module.exports = function(grunt) {
 	var path = require('path');
 	grunt.initConfig({
 		lambda_invoke: {
-			default: {
+			splitFile: {
 				package: 'gatordata',
 				options: {
 					file_name: 'index.js',
@@ -19,7 +19,7 @@ module.exports = function(grunt) {
 			},
 		},
 		lambda_deploy: {
-			default: {
+			splitFile: {
 				package: 'gatordata',
 				options: {
 					file_name: 'index.js',
@@ -27,10 +27,23 @@ module.exports = function(grunt) {
 				},
 				function: "test-splitFiles-Q2RTAGZXK6ON",
 				arn: null,
+			},
+			readAllData: {
+				package: 'gatordata',
+				options: {
+					file_name: 'index.js',
+					handler: 'index.readAllData',
+				},
+				function: "test-readAllData-Q2RTAGZXK6ON",
+				arn: null,
 			}
+
 		},
 		lambda_package: {
-			default: {
+			splitFile: {
+				package: 'gatordata',
+			},
+			readAllData: {
 				package: 'gatordata',
 			}
 		},
@@ -42,6 +55,7 @@ module.exports = function(grunt) {
 
 	});
 
-	grunt.registerTask('deploy', ['env:prod', 'lambda_package', 'lambda_deploy']);
+	grunt.registerTask('deploy:readAllData', ['env:prod', 'lambda_package:readAllData', 'lambda_deploy:readAllData']);
+	grunt.registerTask('deploy:splitFile', ['env:prod', 'lambda_package:splitFile', 'lambda_deploy:splitFile']);
 	grunt.registerTask('test', ['lambda_invoke']);
 };

@@ -106,6 +106,14 @@ var split_file = function split_file(filekey) {
   });
 };
 
+var readAllData = function readAllData(event,context) {
+  // Decode JWT
+  // Get groups/datasets that can be read
+  // Get metadata entries that contain the desired accession
+  // Filter metadata by the JWT permissions
+  // Get data from S3 and combine
+};
+
 var splitFile = function splitFile(event,context) {
   var filekey = 'uploads/foogroup/testing';
   split_file(filekey).then(function(done) {
@@ -120,3 +128,4 @@ var splitFile = function splitFile(event,context) {
 };
 
 exports.splitFile = splitFile;
+exports.readAllData = readAllData;
