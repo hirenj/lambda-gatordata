@@ -4,6 +4,8 @@ var JSONStream = require('JSONStream');
 var fs = require('fs');
 var crypto = require('crypto');
 
+require('es6-promise').polyfill();
+
 var bucket_name = 'test-gator';
 
 //FIXME - Path for the parsed records (key field), part of API design
@@ -45,7 +47,7 @@ var retrieve_file_local = function retrieve_file_local(filekey) {
 }
 
 var retrieve_file = function retrieve_file(filekey) {
-  return retrieve_file_local(filekey);
+  return retrieve_file_s3(filekey);
 }
 
 var split_file = function split_file(filekey) {
@@ -56,9 +58,8 @@ var split_file = function split_file(filekey) {
   var group_id = filekey_components[1];
   var dataset_id = filekey_components[2];
   var accessions = [];
-
+  console.log(group_id,dataset_id);
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
-
     // Output data should end up looking like this:
     // {  'data': dat.value,
     //    'retrieved' : "ISO timestamp",
@@ -68,7 +69,7 @@ var split_file = function split_file(filekey) {
 
     accessions.push(dat.key);
 
-    upload_promises.push(upload_data_record("/data/latest/"+group_id+":"+dataset_id+"/"+dat.key, datablock));
+    upload_promises.push(upload_data_record("data/latest/"+group_id+":"+dataset_id+"/"+dat.key, datablock));
   });
 
   //FIXME - upload metadata as the last part of the upload, marker of done.

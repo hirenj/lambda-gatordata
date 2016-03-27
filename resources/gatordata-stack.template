@@ -42,10 +42,11 @@
           ]]}
         },
         "Description" : "splitFiles",
-        "Handler" : "splitFiles",
+        "Handler" : "index.splitFile",
         "Role" : {"Fn::GetAtt" : ["LambdaSplitFilesRole", "Arn"] },
         "Runtime" : "nodejs",
-        "Timeout" : 60
+        "MemorySize" : 256,
+        "Timeout" : 300
       },
       "DependsOn" : "LambdaSplitFilesRole"
     },

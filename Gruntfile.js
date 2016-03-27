@@ -23,9 +23,9 @@ module.exports = function(grunt) {
 				package: 'gatordata',
 				options: {
 					file_name: 'index.js',
-					handler: 'splitFile',
+					handler: 'index.splitFile',
 				},
-				function: "splitFile",
+				function: "test-splitFiles-Q2RTAGZXK6ON",
 				arn: null,
 			}
 		},
