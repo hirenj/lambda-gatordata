@@ -76,6 +76,9 @@ var split_file = function split_file(filekey) {
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[1];
   var dataset_id = filekey_components[2];
+  if ( ! dataset_id ) {
+    return Promise.reject(new Error('No dataset id'));
+  }
   var accessions = [];
   console.log(group_id,dataset_id);
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
@@ -115,7 +118,7 @@ var readAllData = function readAllData(event,context) {
 };
 
 var splitFile = function splitFile(event,context) {
-  var filekey = 'uploads/foogroup/testing';
+  var filekey = event.Records[0].s3.object.key;
   split_file(filekey).then(function(done) {
     console.log("Uploaded all components");
     context.succeed('OK');

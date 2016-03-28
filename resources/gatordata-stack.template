@@ -87,6 +87,35 @@
         }
       }
     },
+    "dataBucket": {
+      "Type" : "AWS::S3::Bucket",
+      "Properties" : {
+        "BucketName" : {"Fn::Join": ["", [{ "Ref" : "AWS::StackName" }, "-gator"]] },
+        "NotificationConfiguration" : {
+        "LambdaConfigurations" : [ {
+          "Event" : "s3:ObjectCreated:*",
+          "Filter" : { "S3Key" : { "Rules" : [ {"Name" : "prefix", "Value" : "uploads/"} ] }},
+          "Function" : { "Fn::GetAtt": [ "splitFiles", "Arn" ]}
+        }]
+        }
+      },
+      "DependsOn" : [ "splitFiles", "GatorUploadsPermission" ]
+    },
+    "GatorUploadsPermission": {
+        "Type" : "AWS::Lambda::Permission",
+        "Properties" : {
+            "Action":"lambda:invokeFunction",
+            "FunctionName": { "Fn::GetAtt": [ "splitFiles", "Arn" ]},
+            "Principal": "s3.amazonaws.com",
+            "SourceAccount": {"Ref" : "AWS::AccountId" },
+            "SourceArn": {
+                "Fn::Join": ["", [
+                    "arn:aws:s3:::"
+                     ,{ "Ref" : "AWS::StackName" }, "-gator"]]
+            }
+        },
+        "DependsOn" : "splitFiles"
+    },
     "LambdaReadAllDataRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
