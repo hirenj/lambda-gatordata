@@ -223,7 +223,8 @@
             {
               "Effect": "Allow",
               "Action": [
-                  "dynamodb:GetItem"
+                  "dynamodb:GetItem",
+                  "dynamodb:Scan"
               ],
               "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "datasets" } ] ]}
             }

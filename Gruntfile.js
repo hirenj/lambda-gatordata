@@ -34,7 +34,7 @@ module.exports = function(grunt) {
 					file_name: 'index.js',
 					handler: 'index.readAllData',
 				},
-				function: "test-readAllData-Q2RTAGZXK6ON",
+				function: "test-readAllData-JQD5N8YS6QKD",
 				arn: null,
 			}
 

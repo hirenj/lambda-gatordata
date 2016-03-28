@@ -109,12 +109,107 @@ var split_file = function split_file(filekey) {
   });
 };
 
+var base64urlDecode = function(str) {
+  return new Buffer(base64urlUnescape(str), 'base64').toString();
+};
+
+var base64urlUnescape = function(str) {
+  str += new Array(5 - str.length % 4).join('=');
+  return str.replace(/\-/g, '+').replace(/_/g, '/');
+};
+
+var datasets_containing_acc = function(acc) {
+  var params = {
+    TableName : 'test-datasets',
+    FilterExpression : 'contains(#accessions,:acc)',
+    ProjectionExpression : 'id,group_id',
+    ExpressionAttributeNames : { '#accessions' : 'accessions'},
+    ExpressionAttributeValues : {':acc' : acc }
+  };
+  return new Promise(function(resolve,reject) {
+    dynamo.scan(params, function(err, data) {
+     if (err) {
+      reject(err);
+      return;
+     }
+     resolve(data.Items);
+    });
+  });
+};
+
+var download_set_s3 = function(set) {
+  var params = {
+    'Key' : 'data/latest/'+set,
+    'Bucket' : bucket_name
+  };
+  return new Promise(function(resolve,reject) {
+    s3.getObject(params,function(err,data) {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(JSON.parse(data.Body));
+    });
+  });
+};
+
+var combine_sets = function(entries) {
+  var results = {"data" : []};
+  results.data = entries.map(function(entry) { return entry.data });
+  return results;
+};
+
 var readAllData = function readAllData(event,context) {
+  var token = event.authorizationToken.split(' ');
+  var accession = event.acc;
+
+  if(token[0] !== 'Bearer'){
+    context.succeed('NOT-OK');
+    return;
+  }
+
+  var grants = {};
+
   // Decode JWT
   // Get groups/datasets that can be read
+
+  grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
+
   // Get metadata entries that contain the desired accession
-  // Filter metadata by the JWT permissions
-  // Get data from S3 and combine
+
+  datasets_containing_acc(accession).then(function(sets) {
+    console.log(sets);
+    var valid_sets = [];
+    sets.forEach(function(set) {
+
+      // Filter metadata by the JWT permissions
+
+      if (grants[set.group_id+'/'+set.id]) {
+        var valid_prots = grants[set.group_id+'/'+set.id];
+        if (valid_prots.filter(function(id) { return id == '*' || id == accession.toLowerCase(); }).length > 0) {
+          valid_sets.push(set.group_id+':'+set.id);
+        }
+      }
+      if (grants[set.group_id+'/*']) {
+        var valid_prots = grants[set.group_id+'/*'];
+        if (valid_prots.filter(function(id) { return id == '*' || id == accession.toLowerCase(); }).length > 0) {
+          valid_sets.push(set.group_id+':'+set.id);
+        }
+      }
+    });
+    console.log(valid_sets.join(','));
+    return valid_sets;
+  }).then(function(sets) {
+
+    // Get data from S3 and combine
+    return Promise.all(sets.map(function (set) { return download_set_s3(set+'/'+accession); }));
+  }).then(combine_sets).then(function(combined) {
+    context.succeed(combined);
+  }).catch(function(err) {
+    console.error(err);
+    console.error(err.stack);
+    context.succeed('NOT-OK');
+  });
 };
 
 var splitFile = function splitFile(event,context) {
