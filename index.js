@@ -159,6 +159,14 @@ var combine_sets = function(entries) {
   return results;
 };
 
+/*
+Test event
+{
+  "acc": "Q9VZF9",
+  "authorizationToken": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhY2Nlc3MiOnsiZm9vZ3JvdXAvdGVzdGluZyI6WyIqIl0sImZvb2dyb3VwLzBCeTQ4S0tEdTlsZUNjWE5hUXpaelZGOW1hR00iOlsiUDEyMzQ1Il19fQ.l3kBNPB1p5kXfobGhCoXP9taUvbbn3vloqQYgd3P6cA"
+}
+*/
+
 var readAllData = function readAllData(event,context) {
   var token = event.authorizationToken.split(' ');
   var accession = event.acc;
