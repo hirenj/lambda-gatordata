@@ -134,10 +134,10 @@
         }
       }
     },
-    "LogWriterPolicy": {
+    "GatordataLogWriterPolicy": {
       "Type": "AWS::IAM::Policy",
       "Properties" : {
-        "PolicyName" : "LogWriterPolicy",
+        "PolicyName" : "GatordataLogWriterPolicy",
         "PolicyDocument" : {
             "Version": "2012-10-17",
             "Statement": [
@@ -152,9 +152,9 @@
               }
             ]
         },
-        "Roles" : [ { "Ref" : "LambdaSplitFilesRole" } ]
+        "Roles" : [ { "Ref" : "LambdaSplitFilesRole" }, {"Ref" : "LambdaReadAllDataRole"} ]
       },
-      "DependsOn" : "LambdaSplitFilesRole"
+      "DependsOn" : ["LambdaSplitFilesRole","LambdaReadAllDataRole"]
     },
     "ReadUploaded": {
       "Type": "AWS::IAM::ManagedPolicy",
