@@ -8,11 +8,12 @@ var crypto = require('crypto');
 require('es6-promise').polyfill();
 
 var bucket_name = 'test-gator';
+var dynamodb_table = 'test-datasets';
 
 var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta) {
   var item = {};
   return new Promise(function(resolve,reject) {
-    dynamo.put({'TableName' :'test-datasets', 'Item' : {
+    dynamo.put({'TableName' : dynamodb_table, 'Item' : {
       'accessions' : meta.accessions,
       'id' : set,
       'group_id' : group
@@ -120,7 +121,7 @@ var base64urlUnescape = function(str) {
 
 var datasets_containing_acc = function(acc) {
   var params = {
-    TableName : 'test-datasets',
+    TableName : dynamodb_table,
     FilterExpression : 'contains(#accessions,:acc)',
     ProjectionExpression : 'id,group_id',
     ExpressionAttributeNames : { '#accessions' : 'accessions'},
