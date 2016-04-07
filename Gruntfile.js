@@ -31,7 +31,7 @@ module.exports = function(grunt) {
 					file_name: 'index.js',
 					handler: 'index.splitFile',
 				},
-				function: config.functions['splitFile'] || 'splitFile',
+				function: config.functions['splitFiles'] || 'splitFiles',
 				arn: null,
 			},
 			readAllData: {
@@ -63,5 +63,6 @@ module.exports = function(grunt) {
 
 	grunt.registerTask('deploy:readAllData', ['env:prod', 'lambda_package:readAllData', 'lambda_deploy:readAllData']);
 	grunt.registerTask('deploy:splitFile', ['env:prod', 'lambda_package:splitFile', 'lambda_deploy:splitFile']);
+	grunt.registerTask('deploy', ['env:prod', 'lambda_package', 'lambda_deploy']);
 	grunt.registerTask('test', ['lambda_invoke']);
 };
