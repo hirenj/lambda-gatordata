@@ -7,8 +7,19 @@ var crypto = require('crypto');
 
 require('es6-promise').polyfill();
 
+var fs = require('fs');
+
 var bucket_name = 'test-gator';
 var dynamodb_table = 'test-datasets';
+
+try {
+    fs.accessSync('resources.conf.json', fs.F_OK);
+    var config = require('./resources.conf.json');
+    bucket_name = config.buckets.dataBucket;
+    dynamodb_table = config.tables.datasets;
+} catch (e) {
+}
+
 
 var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta) {
   var item = {};

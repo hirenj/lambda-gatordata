@@ -7,6 +7,12 @@ module.exports = function(grunt) {
 	require('load-grunt-tasks')(grunt);
 
 	var path = require('path');
+	var config = {'functions' : {} };
+	try {
+		config = require('./resources.conf.json');
+	} catch (e) {
+	}
+
 	grunt.initConfig({
 		lambda_invoke: {
 			splitFile: {
@@ -25,7 +31,7 @@ module.exports = function(grunt) {
 					file_name: 'index.js',
 					handler: 'index.splitFile',
 				},
-				function: "test-splitFiles-Q2RTAGZXK6ON",
+				function: config.functions['splitFile'] || 'splitFile',
 				arn: null,
 			},
 			readAllData: {
@@ -34,7 +40,7 @@ module.exports = function(grunt) {
 					file_name: 'index.js',
 					handler: 'index.readAllData',
 				},
-				function: "test-readAllData-JQD5N8YS6QKD",
+				function: config.functions['readAllData'] || 'readAllData',
 				arn: null,
 			}
 
