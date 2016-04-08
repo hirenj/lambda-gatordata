@@ -205,13 +205,13 @@ var readAllData = function readAllData(event,context) {
 
       if (grants[set.group_id+'/'+set.id]) {
         var valid_prots = grants[set.group_id+'/'+set.id];
-        if (valid_prots.filter(function(id) { return id == '*' || id == accession.toLowerCase(); }).length > 0) {
+        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession.toLowerCase(); }).length > 0) {
           valid_sets.push(set.group_id+':'+set.id);
         }
       }
       if (grants[set.group_id+'/*']) {
         var valid_prots = grants[set.group_id+'/*'];
-        if (valid_prots.filter(function(id) { return id == '*' || id == accession.toLowerCase(); }).length > 0) {
+        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession.toLowerCase(); }).length > 0) {
           valid_sets.push(set.group_id+':'+set.id);
         }
       }
