@@ -98,9 +98,9 @@ var split_file = function split_file(filekey) {
 
     var datablock = {'data': dat.value };
 
-    accessions.push(dat.key);
+    accessions.push(dat.key.toLowerCase());
 
-    upload_promises.push(upload_data_record("data/latest/"+group_id+":"+dataset_id+"/"+dat.key, datablock));
+    upload_promises.push(upload_data_record("data/latest/"+group_id+":"+dataset_id+"/"+dat.key.toLowerCase(), datablock));
   });
 
   //FIXME - upload metadata as the last part of the upload, marker of done.
@@ -133,7 +133,7 @@ var datasets_containing_acc = function(acc) {
     FilterExpression : 'contains(#accessions,:acc)',
     ProjectionExpression : 'id,group_id',
     ExpressionAttributeNames : { '#accessions' : 'accessions'},
-    ExpressionAttributeValues : {':acc' : acc }
+    ExpressionAttributeValues : {':acc' : acc.toLowerCase() }
   };
   return new Promise(function(resolve,reject) {
     dynamo.scan(params, function(err, data) {
@@ -180,7 +180,7 @@ var readAllData = function readAllData(event,context) {
   console.log("readAllData");
   console.log(event);
   var token = event.authorizationToken.split(' ');
-  var accession = event.acc;
+  var accession = event.acc.toLowerCase();
 
   if(token[0] !== 'Bearer'){
     context.succeed('NOT-OK');
@@ -205,13 +205,13 @@ var readAllData = function readAllData(event,context) {
 
       if (grants[set.group_id+'/'+set.id]) {
         var valid_prots = grants[set.group_id+'/'+set.id];
-        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession.toLowerCase(); }).length > 0) {
+        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
           valid_sets.push(set.group_id+':'+set.id);
         }
       }
       if (grants[set.group_id+'/*']) {
         var valid_prots = grants[set.group_id+'/*'];
-        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession.toLowerCase(); }).length > 0) {
+        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
           valid_sets.push(set.group_id+':'+set.id);
         }
       }
