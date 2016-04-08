@@ -7,13 +7,10 @@ var crypto = require('crypto');
 
 require('es6-promise').polyfill();
 
-var fs = require('fs');
-
 var bucket_name = 'test-gator';
 var dynamodb_table = 'test-datasets';
 
 try {
-    fs.accessSync('resources.conf.json', fs.F_OK);
     var config = require('./resources.conf.json');
     bucket_name = config.buckets.dataBucket;
     dynamodb_table = config.tables.datasets;
@@ -180,6 +177,8 @@ Test event
 */
 
 var readAllData = function readAllData(event,context) {
+  console.log("readAllData");
+  console.log(event);
   var token = event.authorizationToken.split(' ');
   var accession = event.acc;
 
