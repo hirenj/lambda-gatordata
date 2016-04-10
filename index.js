@@ -232,7 +232,7 @@ var readAllData = function readAllData(event,context) {
 };
 
 var splitFile = function splitFile(event,context) {
-  var filekey = event.Records[0].s3.object.key;
+  var filekey = require('querystring').unescape(event.Records[0].s3.object.key);
   split_file(filekey).then(function(done) {
     console.log("Uploaded all components");
     context.succeed('OK');
