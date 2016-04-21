@@ -193,11 +193,22 @@
             {
               "Effect": "Allow",
               "Action": [
-                "s3:PutObject"
+                "s3:PutObject",
+                "s3:DeleteObject"
               ],
               "Resource": [
                 { "Fn::Join" :  [ "", [ "arn:aws:s3:::", { "Ref" : "AWS::StackName" }, "-gator/data/latest/*" ] ] }
               ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucket"
+              ],
+              "Resource": [
+                { "Fn::Join" :  [ "", [ "arn:aws:s3:::", { "Ref" : "AWS::StackName" }, "-gator" ] ] }
+              ],
+              "Condition": {"StringLike":{"s3:prefix":["data/latest/*"]}}
             },
             {
               "Effect": "Allow",

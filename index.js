@@ -7,6 +7,23 @@ var crypto = require('crypto');
 
 require('es6-promise').polyfill();
 
+var promisify = function(aws) {
+  aws.Request.prototype.promise = function() {
+    return new Promise(function(accept, reject) {
+      this.on('complete', function(response) {
+        if (response.error) {
+          reject(response.error);
+        } else {
+          accept(response);
+        }
+      });
+      this.send();
+    }.bind(this));
+  };
+};
+
+promisify(AWS);
+
 var bucket_name = 'test-gator';
 var dynamodb_table = 'test-datasets';
 
@@ -78,16 +95,46 @@ var retrieve_file = function retrieve_file(filekey) {
   return retrieve_file_s3(filekey);
 }
 
-var split_file = function split_file(filekey) {
-  var rs = retrieve_file(filekey);
-  var upload_promises = [];
+var remove_folder = function remove_folder(setkey) {
+  var params = {
+    Bucket: bucket_name,
+    Prefix: "data/latest/"+setkey+"/"
+  };
+  console.log(params);
+  return s3.listObjects(params).promise().then(function(result) {
+    var params = {Bucket: bucket_name, Delete: { Objects: [] }};
+    params.Delete.Objects = result.data.Contents.map(function(content) { return { Key: content.Key }; });
+    if (params.Delete.Objects.length < 1) {
+      return Promise.resolve({"data" : { "Deleted" : [] }});
+    }
+    return s3.deleteObjects(params).promise();
+  }).then(function(result) {
+    if (result.data.Deleted.length === 1000) {
+      return remove_folder(setkey);
+    }
+    return true;
+  });
+}
+
+var split_file = function split_file(filekey,skip_remove) {
 
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[1];
   var dataset_id = filekey_components[2];
+
   if ( ! dataset_id ) {
     return Promise.reject(new Error('No dataset id'));
   }
+
+  if (! skip_remove) {
+    return remove_folder(group_id+":"+dataset_id).then(function() {
+      return split_file(filekey,true);
+    });
+  }
+
+  var rs = retrieve_file(filekey);
+  var upload_promises = [];
+
   var accessions = [];
   console.log(group_id,dataset_id);
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
