@@ -116,6 +116,13 @@ var remove_folder = function remove_folder(setkey) {
   });
 }
 
+var remove_data = function remove_data(filekey) {
+  var filekey_components = filekey.split('/');
+  var group_id = filekey_components[2];
+  var dataset_id = filekey_components[1];
+  return remove_folder(group_id+":"+dataset_id);
+};
+
 var split_file = function split_file(filekey,skip_remove) {
 
   var filekey_components = filekey.split('/');
@@ -280,7 +287,16 @@ var readAllData = function readAllData(event,context) {
 
 var splitFile = function splitFile(event,context) {
   var filekey = require('querystring').unescape(event.Records[0].s3.object.key);
-  split_file(filekey).then(function(done) {
+  var result_promise = Promise.resolve(true);
+  if (event.Records[0].eventName.match(/ObjectRemoved/)) {
+    console.log("Remove data at ",filekey);
+    result_promise = remove_data(filekey);
+  }
+  if (event.Records[0].eventName.match(/ObjectCreated/)) {
+    console.log("Splitting data at ",filekey);
+    result_promise = split_file(filekey);
+  }
+  result_promise.then(function(done) {
     console.log("Uploaded all components");
     context.succeed('OK');
     // Upload the metadata at the end of a successful decomposition
