@@ -119,8 +119,8 @@ var remove_folder = function remove_folder(setkey) {
 var split_file = function split_file(filekey,skip_remove) {
 
   var filekey_components = filekey.split('/');
-  var group_id = filekey_components[1];
-  var dataset_id = filekey_components[2];
+  var group_id = filekey_components[2];
+  var dataset_id = filekey_components[1];
 
   if ( ! dataset_id ) {
     return Promise.reject(new Error('No dataset id'));
