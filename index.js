@@ -120,7 +120,9 @@ var remove_data = function remove_data(filekey) {
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
-  return remove_folder(group_id+":"+dataset_id);
+  return remove_folder(group_id+":"+dataset_id).then(function() {
+    return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': {}, 'accessions' : []]});
+  });
 };
 
 var split_file = function split_file(filekey,skip_remove) {
