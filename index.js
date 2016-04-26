@@ -121,7 +121,7 @@ var remove_data = function remove_data(filekey) {
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
   return remove_folder(group_id+":"+dataset_id).then(function() {
-    return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': {}, 'accessions' : []]});
+    return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': {}, 'accessions' : []});
   });
 };
 
