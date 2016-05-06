@@ -26,6 +26,7 @@ promisify(AWS);
 
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
+var data_table = 'data';
 
 try {
     var config = require('./resources.conf.json');
@@ -51,6 +52,15 @@ var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta)
       resolve(result);
     });
   });
+};
+
+var upload_data_record_db = function upload_data_record_db(key,data) {
+  var key_elements = key.split('/');
+  var set_ids = key[2].split(':');
+  var group_id = set_ids[0];
+  var set_id = set_ids[1];
+  var acc = key[3];
+  // Update item (set: acc, set_id, data) add group_id.
 };
 
 var upload_data_record_s3 = function upload_data_record_s3(key,data) {
@@ -96,6 +106,15 @@ var retrieve_file = function retrieve_file(filekey) {
 }
 
 var remove_folder = function remove_folder(setkey) {
+  return remove_folder_s3(setkey);
+};
+
+var remove_folder_db = function remove_folder_db(setkey) {
+  // We should remove the group from the entries in the dataset
+  // Possibly another vacuum step to remove orphan datasets?
+};
+
+var remove_folder_s3 = function remove_folder_s3(setkey) {
   var params = {
     Bucket: bucket_name,
     Prefix: "data/latest/"+setkey+"/"
@@ -202,6 +221,20 @@ var datasets_containing_acc = function(acc) {
   });
 };
 
+var download_all_data_db = function(accession,grants) {
+  var params = {
+    TableName: data_table,
+    KeyConditionExpression: 'acc = :acc',
+    ExpressionAttributeValues: {
+      ':acc': accession
+    }
+  };
+
+  return dynamo.query(params).promise().then(function(data) {
+     return(data.Items);
+  });
+};
+
 var download_set_s3 = function(set) {
   var params = {
     'Key' : 'data/latest/'+set,
@@ -218,6 +251,48 @@ var download_set_s3 = function(set) {
       resolve(result);
     });
   });
+};
+
+var download_all_data_s3 = function(accession,grants) {
+  // Get metadata entries that contain the desired accession
+  var start_time = (new Date()).getTime();
+  console.log("datasets_containing_acc start ");
+  return datasets_containing_acc(accession).then(function(sets) {
+    console.log("datasets_containing_acc end ",(new Date()).getTime() - start_time);
+    console.log(sets);
+    var valid_sets = [];
+    sets.forEach(function(set) {
+
+      // Filter metadata by the JWT permissions
+
+      if (grants[set.group_id+'/'+set.id]) {
+        var valid_prots = grants[set.group_id+'/'+set.id];
+        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+          valid_sets.push(set.group_id+':'+set.id);
+        }
+      }
+      if (grants[set.group_id+'/*']) {
+        var valid_prots = grants[set.group_id+'/*'];
+        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+          valid_sets.push(set.group_id+':'+set.id);
+        }
+      }
+    });
+    console.log(valid_sets.join(','));
+    return valid_sets;
+  }).then(function(sets) {
+    start_time = (new Date()).getTime();
+    // Get data from S3 and combine
+    console.log("download_set_s3 start");
+    return Promise.all(sets.map(function (set) { return download_set_s3(set+'/'+accession); })).then(function(entries) {
+      console.log("download_set_s3 end ",(new Date()).getTime() - start_time);
+      return entries;
+    });
+  });
+};
+
+var download_all_data = function(accession,grants) {
+  return download_all_data_s3(accession,grants);
 };
 
 var combine_sets = function(entries) {
@@ -252,42 +327,10 @@ var readAllData = function readAllData(event,context) {
 
   grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
 
-  // Get metadata entries that contain the desired accession
-  var start_time = (new Date()).getTime();
-  console.log("datasets_containing_acc start ");
-  datasets_containing_acc(accession).then(function(sets) {
-    console.log("datasets_containing_acc end ",(new Date()).getTime() - start_time);
-    console.log(sets);
-    var valid_sets = [];
-    sets.forEach(function(set) {
-
-      // Filter metadata by the JWT permissions
-
-      if (grants[set.group_id+'/'+set.id]) {
-        var valid_prots = grants[set.group_id+'/'+set.id];
-        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
-          valid_sets.push(set.group_id+':'+set.id);
-        }
-      }
-      if (grants[set.group_id+'/*']) {
-        var valid_prots = grants[set.group_id+'/*'];
-        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
-          valid_sets.push(set.group_id+':'+set.id);
-        }
-      }
-    });
-    console.log(valid_sets.join(','));
-    return valid_sets;
-  }).then(function(sets) {
-    start_time = (new Date()).getTime();
-    // Get data from S3 and combine
-    console.log("download_set_s3 start");
-    return Promise.all(sets.map(function (set) { return download_set_s3(set+'/'+accession); }));
-  }).then(function(sets) {
-    console.log("download_set_s3 end ",(new Date()).getTime() - start_time);
+  download_all_data(accession,grants).then(function(entries) {
     start_time = (new Date()).getTime();
     console.log("combine_sets start");
-    return sets;
+    return entries;
   }).then(combine_sets).then(function(combined) {
     console.log("combine_sets end ",(new Date()).getTime() - start_time);
     context.succeed(combined);
