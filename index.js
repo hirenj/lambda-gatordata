@@ -25,12 +25,12 @@ var promisify = function(aws) {
 promisify(AWS);
 
 var bucket_name = 'test-gator';
-var dynamodb_table = 'test-datasets';
+var metadata_table = 'test-datasets';
 
 try {
     var config = require('./resources.conf.json');
     bucket_name = config.buckets.dataBucket;
-    dynamodb_table = config.tables.datasets;
+    metadata_table = config.tables.datasets;
 } catch (e) {
 }
 
@@ -38,7 +38,7 @@ try {
 var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta) {
   var item = {};
   return new Promise(function(resolve,reject) {
-    dynamo.put({'TableName' : dynamodb_table, 'Item' : {
+    dynamo.put({'TableName' : metadata_table, 'Item' : {
       'accessions' : meta.accessions,
       'id' : set,
       'group_id' : group
@@ -185,7 +185,7 @@ var base64urlUnescape = function(str) {
 
 var datasets_containing_acc = function(acc) {
   var params = {
-    TableName : dynamodb_table,
+    TableName : metadata_table,
     FilterExpression : 'contains(#accessions,:acc)',
     ProjectionExpression : 'id,group_id',
     ExpressionAttributeNames : { '#accessions' : 'accessions'},
@@ -213,14 +213,16 @@ var download_set_s3 = function(set) {
         reject(err);
         return;
       }
-      resolve(JSON.parse(data.Body));
+      var result = JSON.parse(data.Body);
+      result.dataset = set;
+      resolve(result);
     });
   });
 };
 
 var combine_sets = function(entries) {
   var results = {"data" : []};
-  results.data = entries.map(function(entry) { return entry.data });
+  results.data = entries.map(function(entry) { return entry });
   return results;
 };
 
@@ -251,8 +253,10 @@ var readAllData = function readAllData(event,context) {
   grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
 
   // Get metadata entries that contain the desired accession
-
+  var start_time = (new Date()).getTime();
+  console.log("datasets_containing_acc start ");
   datasets_containing_acc(accession).then(function(sets) {
+    console.log("datasets_containing_acc end ",(new Date()).getTime() - start_time);
     console.log(sets);
     var valid_sets = [];
     sets.forEach(function(set) {
@@ -275,10 +279,17 @@ var readAllData = function readAllData(event,context) {
     console.log(valid_sets.join(','));
     return valid_sets;
   }).then(function(sets) {
-
+    start_time = (new Date()).getTime();
     // Get data from S3 and combine
+    console.log("download_set_s3 start");
     return Promise.all(sets.map(function (set) { return download_set_s3(set+'/'+accession); }));
+  }).then(function(sets) {
+    console.log("download_set_s3 end ",(new Date()).getTime() - start_time);
+    start_time = (new Date()).getTime();
+    console.log("combine_sets start");
+    return sets;
   }).then(combine_sets).then(function(combined) {
+    console.log("combine_sets end ",(new Date()).getTime() - start_time);
     context.succeed(combined);
   }).catch(function(err) {
     console.error(err);
