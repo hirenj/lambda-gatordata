@@ -130,9 +130,10 @@ var remove_folder_db = function remove_folder_db(setkey) {
   set_id = ids[1];
   // We should remove the group from the entries in the dataset
   // Possibly another vacuum step to remove orphan datasets?
+  // Maybe just get rid of the group in the datasets
+  // table and then do a batch write?
   var params = {
    'TableName' : data_table,
-   'Index' : 'dataset-index',
    'Key' : { 'dataset' : set_id },
    'UpdateExpression': 'DELETE #gids :group',
     'ExpressionAttributeValues': {
