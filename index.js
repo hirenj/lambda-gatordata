@@ -56,11 +56,25 @@ var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta)
 
 var upload_data_record_db = function upload_data_record_db(key,data) {
   var key_elements = key.split('/');
-  var set_ids = key[2].split(':');
+  var set_ids = key_elements[2].split(':');
   var group_id = set_ids[0];
   var set_id = set_ids[1];
-  var acc = key[3];
+  var accession = key_elements[3];
   // Update item (set: acc, set_id, data) add group_id.
+  var params = {
+   'TableName' : data_table,
+   'Key' : {'acc' : accession, 'dataset' : set_id },
+   'UpdateExpression': 'ADD #gids :group SET #data = :data',
+    'ExpressionAttributeValues': {
+        ':group': dynamo.createSet([ group_id ]),
+        ':data' : data.data
+    },
+    'ExpressionAttributeNames' : {
+      '#gids' : 'group_ids',
+      '#data' : 'data'
+    }
+  };
+  return dynamo.update(params).promise();
 };
 
 var upload_data_record_s3 = function upload_data_record_s3(key,data) {
@@ -86,7 +100,7 @@ var upload_data_record_s3 = function upload_data_record_s3(key,data) {
 };
 
 var upload_data_record = function upload_data_record(key,data) {
-  return upload_data_record_s3(key,data);
+  return upload_data_record_db(key,data);
 };
 
 var retrieve_file_s3 = function retrieve_file_s3(filekey) {
@@ -102,16 +116,33 @@ var retrieve_file_local = function retrieve_file_local(filekey) {
 }
 
 var retrieve_file = function retrieve_file(filekey) {
-  return retrieve_file_s3(filekey);
+  return retrieve_file_local(filekey);
 }
 
 var remove_folder = function remove_folder(setkey) {
-  return remove_folder_s3(setkey);
+  return remove_folder_db(setkey);
 };
 
 var remove_folder_db = function remove_folder_db(setkey) {
+  var group_id, dataset_id;
+  var ids = setkey.split(':');
+  group_id = ids[0];
+  set_id = ids[1];
   // We should remove the group from the entries in the dataset
   // Possibly another vacuum step to remove orphan datasets?
+  var params = {
+   'TableName' : data_table,
+   'Index' : 'dataset-index',
+   'Key' : { 'dataset' : set_id },
+   'UpdateExpression': 'DELETE #gids :group',
+    'ExpressionAttributeValues': {
+        ':group': dynamo.createSet([ group_id ])
+    },
+    'ExpressionAttributeNames' : {
+      '#gids' : 'group_ids'
+    }
+  };
+  return dynamo.update(params).promise();
 };
 
 var remove_folder_s3 = function remove_folder_s3(setkey) {
@@ -145,7 +176,7 @@ var remove_data = function remove_data(filekey) {
 };
 
 var split_file = function split_file(filekey,skip_remove) {
-
+  skip_remove = true;
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
