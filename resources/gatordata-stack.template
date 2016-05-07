@@ -1,7 +1,7 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Resources": {
-    "datasets": {
+    "data": {
       "Type": "AWS::DynamoDB::Table",
       "Properties": {
         "TableName" : { "Fn::Join" :  [ "-", [ { "Ref" : "AWS::StackName" }, "data" ] ] },
@@ -247,7 +247,8 @@
             {
               "Effect": "Allow",
               "Action": [
-                  "dynamodb:GetItem"
+                  "dynamodb:GetItem",
+                  "dynamodb:Query"
               ],
               "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "data" } ] ]}
             }
