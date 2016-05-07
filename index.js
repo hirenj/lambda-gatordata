@@ -32,11 +32,12 @@ try {
     var config = require('./resources.conf.json');
     bucket_name = config.buckets.dataBucket;
     metadata_table = config.tables.datasets;
+    data_table = config.table.data;
 } catch (e) {
 }
 
 
-var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta) {
+var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,meta) {
   var item = {};
   return new Promise(function(resolve,reject) {
     dynamo.put({'TableName' : metadata_table, 'Item' : {
@@ -54,30 +55,63 @@ var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta)
   });
 };
 
-var upload_data_record_db = function upload_data_record_db(key,data) {
-  var key_elements = key.split('/');
-  var set_ids = key_elements[2].split(':');
-  var group_id = set_ids[0];
-  var set_id = set_ids[1];
-  var accession = key_elements[3];
+var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,meta) {
   // Update item (set: acc, set_id, data) add group_id.
+  if (meta && meta.accessions.length < 1) {
+    return Promise.resolve(true);
+  }
   var params = {
    'TableName' : data_table,
-   'Key' : {'acc' : accession, 'dataset' : set_id },
-   'UpdateExpression': 'ADD #gids :group SET #data = :data',
+   'Key' : {'acc' : 'metadata', 'dataset' : set_id },
+   'UpdateExpression': 'ADD #gids :group',
     'ExpressionAttributeValues': {
         ':group': dynamo.createSet([ group_id ]),
-        ':data' : data.data
     },
     'ExpressionAttributeNames' : {
-      '#gids' : 'group_ids',
-      '#data' : 'data'
+      '#gids' : 'group_ids'
     }
   };
+  console.log("Adding ",group_id," to set ",set_id);
   return dynamo.update(params).promise();
 };
 
+var upload_metadata_dynamodb = function(set,group,meta) {
+  return upload_metadata_dynamodb_from_db(set,group,meta);
+}
+
+var upload_queue_db = [];
+
+var upload_data_record_db = function upload_data_record_db(key,data) {
+  var key_elements = key ? key.split('/') : [];
+  var set_ids = (key_elements[2] || '').split(':');
+  var group_id = set_ids[0];
+  var set_id = set_ids[1];
+  var accession = key_elements[3];
+  if (key) {
+    upload_queue_db.push({
+      'PutRequest' : {
+        'Item' : {
+          'acc' : accession,
+          'dataset' : set_id,
+          'data' : data.data
+        }
+      }
+    });
+  }
+  if ( ! key || upload_queue_db.length == 25) {
+    var params = { 'RequestItems' : {} };
+    params.RequestItems[data_table] = [].concat(upload_queue_db);
+    upload_queue_db = [];
+    return dynamo.batchWrite(params).promise();
+  } else {
+    return Promise.resolve(true);
+  }
+};
+
 var upload_data_record_s3 = function upload_data_record_s3(key,data) {
+  if ( ! key ) {
+    return Promise.resolve(true);
+  }
   return new Promise(function(resolve,reject) {
     var params = {
       'Bucket': bucket_name,
@@ -116,7 +150,7 @@ var retrieve_file_local = function retrieve_file_local(filekey) {
 }
 
 var retrieve_file = function retrieve_file(filekey) {
-  return retrieve_file_local(filekey);
+  return retrieve_file_s3(filekey);
 }
 
 var remove_folder = function remove_folder(setkey) {
@@ -132,9 +166,10 @@ var remove_folder_db = function remove_folder_db(setkey) {
   // Possibly another vacuum step to remove orphan datasets?
   // Maybe just get rid of the group in the datasets
   // table and then do a batch write?
+  console.log("Removing from set ",set_id,"group",group_id);
   var params = {
    'TableName' : data_table,
-   'Key' : { 'dataset' : set_id },
+   'Key' : { 'dataset' : set_id, 'acc' : 'metadata' },
    'UpdateExpression': 'DELETE #gids :group',
     'ExpressionAttributeValues': {
         ':group': dynamo.createSet([ group_id ])
@@ -213,6 +248,7 @@ var split_file = function split_file(filekey,skip_remove) {
   //FIXME - upload metadata as the last part of the upload, marker of done.
   //        should be part of api request
   rs.pipe(JSONStream.parse(['metadata'])).on('data',function(dat) {
+    upload_promises.push(upload_data_record(null,null));
     upload_promises.push(upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'accessions' : accessions}));
   });
   return new Promise(function(resolve,reject) {
@@ -261,9 +297,8 @@ var download_all_data_db = function(accession,grants) {
       ':acc': accession
     }
   };
-
   return dynamo.query(params).promise().then(function(data) {
-     return(data.Items);
+    return(data.data.Items.map(function(item) { return item; }));
   });
 };
 
@@ -324,7 +359,7 @@ var download_all_data_s3 = function(accession,grants) {
 };
 
 var download_all_data = function(accession,grants) {
-  return download_all_data_s3(accession,grants);
+  return download_all_data_db(accession,grants);
 };
 
 var combine_sets = function(entries) {
@@ -356,8 +391,8 @@ var readAllData = function readAllData(event,context) {
 
   // Decode JWT
   // Get groups/datasets that can be read
-
-  grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
+  grants = {};
+  // grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
 
   download_all_data(accession,grants).then(function(entries) {
     start_time = (new Date()).getTime();
