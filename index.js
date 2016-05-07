@@ -92,15 +92,17 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
   var set_id = set_ids[1];
   var accession = key_elements[3];
   if (key) {
-    upload_queue_db.push({
-      'PutRequest' : {
-        'Item' : {
-          'acc' : accession,
-          'dataset' : set_id,
-          'data' : JSON.stringify(data.data)
+    if ( accession && set_id && data.data ) {
+      upload_queue_db.push({
+        'PutRequest' : {
+          'Item' : {
+            'acc' : accession,
+            'dataset' : set_id,
+            'data' : JSON.stringify(data.data)
+          }
         }
-      }
-    });
+      });
+    }
   }
   if ( ! interval_uploader ) {
     console.log("Setting interval_uploader");
@@ -117,11 +119,11 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
             if ( ! result.data.UnprocessedItems ) {
               return;
             }
-            console.log("Adding ",result.data.UnprocessedItems['test-data'].length,"items back onto queue");
-            result.data.UnprocessedItems['test-data'].map(function(dat) {
+            console.log("Adding ",result.data.UnprocessedItems[data_table].length,"items back onto queue");
+            result.data.UnprocessedItems[data_table].map(function(dat) {
               return dat.PutRequest.Item;
             }).forEach(function(item) {
-              upload_queue_db.push(item);
+              upload_queue_db.push({'PutRequest': { 'Item' : item  } });
             });
           }));
         } else {
