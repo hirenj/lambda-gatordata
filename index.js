@@ -32,7 +32,7 @@ try {
     var config = require('./resources.conf.json');
     bucket_name = config.buckets.dataBucket;
     metadata_table = config.tables.datasets;
-    data_table = config.table.data;
+    data_table = config.tables.data;
 } catch (e) {
 }
 
