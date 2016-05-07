@@ -80,6 +80,10 @@ var upload_metadata_dynamodb = function(set,group,meta) {
 }
 
 var upload_queue_db = [];
+var interval_uploader;
+var interval_upload_promises = [];
+var queue_empty_promise;
+var seen_empty_key = false;
 
 var upload_data_record_db = function upload_data_record_db(key,data) {
   var key_elements = key ? key.split('/') : [];
@@ -93,16 +97,47 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
         'Item' : {
           'acc' : accession,
           'dataset' : set_id,
-          'data' : data.data
+          'data' : JSON.stringify(data.data)
         }
       }
     });
   }
-  if ( ! key || upload_queue_db.length == 25) {
-    var params = { 'RequestItems' : {} };
-    params.RequestItems[data_table] = [].concat(upload_queue_db);
-    upload_queue_db = [];
-    return dynamo.batchWrite(params).promise();
+  if ( ! interval_uploader ) {
+    console.log("Setting interval_uploader");
+    queue_empty_promise = new Promise(function(resolve,reject) {
+
+      interval_uploader = setTimeout(function() {
+        var params = { 'RequestItems' : {} };
+        console.log("Upload queue length is ",upload_queue_db.length);
+        params.RequestItems[data_table] = upload_queue_db.splice(0,25);
+        if (params.RequestItems[data_table].length > 0 ) {
+          interval_upload_promises.push( dynamo.batchWrite(params).promise().catch(function(err) {
+            console.log("BatchWriteErr",err);
+          }).then(function(result) {
+            if ( ! result.data.UnprocessedItems ) {
+              return;
+            }
+            console.log("Adding ",result.data.UnprocessedItems['test-data'].length,"items back onto queue");
+            result.data.UnprocessedItems['test-data'].map(function(dat) {
+              return dat.PutRequest.Item;
+            }).forEach(function(item) {
+              upload_queue_db.push(item);
+            });
+          }));
+        } else {
+          if (seen_empty_key && upload_queue_db.length == 0) {
+            resolve(true);
+          }
+        }
+        interval_uploader = setTimeout(arguments.callee,1000);
+      },1000);
+    
+    });
+  }
+  if ( ! key ) {
+    seen_empty_key = true;
+    console.log("We have",interval_upload_promises.length,"upload batches");
+    return queue_empty_promise;
   } else {
     return Promise.resolve(true);
   }
@@ -232,6 +267,7 @@ var split_file = function split_file(filekey,skip_remove) {
 
   var accessions = [];
   console.log(group_id,dataset_id);
+  interval_uploader = null;
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
     // Output data should end up looking like this:
     // {  'data': dat.value,
