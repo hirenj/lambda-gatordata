@@ -4,6 +4,7 @@ var dynamo = new AWS.DynamoDB.DocumentClient({region:'us-east-1'});
 var JSONStream = require('JSONStream');
 var fs = require('fs');
 var crypto = require('crypto');
+var zlib = require('zlib');
 
 require('es6-promise').polyfill();
 
@@ -93,27 +94,58 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
   var accession = key_elements[3];
   if (key) {
     if ( accession && set_id && data.data ) {
-      upload_queue_db.push({
-        'PutRequest' : {
-          'Item' : {
-            'acc' : accession,
-            'dataset' : set_id,
-            'data' : JSON.stringify(data.data)
-          }
+      data.data.forEach(function(pep) {
+        if (pep.spectra) {
+          delete pep.spectra;
         }
       });
+      var block = {
+              'acc' : accession,
+              'dataset' : set_id
+      };
+      block.data = zlib.deflateSync(new Buffer(JSON.stringify(data.data),'utf8')).toString('binary');
+      upload_queue_db.push({
+        'PutRequest' : {
+          'Item' : block
+        }
+      });
+
     }
   }
   if ( ! interval_uploader ) {
     console.log("Setting interval_uploader");
     queue_empty_promise = new Promise(function(resolve,reject) {
-
+      AWS.events.on('retry', function(resp) {
+        if (resp.error) resp.error.retryDelay = 1000;
+        resp.error.retryable = false;
+      });
       interval_uploader = setTimeout(function() {
         var params = { 'RequestItems' : {} };
         console.log("Upload queue length is ",upload_queue_db.length);
-        params.RequestItems[data_table] = upload_queue_db.splice(0,25);
+        params.RequestItems[data_table] = [];
+        while (upload_queue_db.length > 0 && params.RequestItems[data_table].length < 25  && JSON.stringify(params.RequestItems[data_table].concat(upload_queue_db[0])).length < 15000) {
+          var next_item = upload_queue_db.shift();
+          while (next_item && JSON.stringify(next_item).length > 12000) {
+            console.log("Size of data too big for ",next_item.PutRequest.Item.acc," skipping ",JSON.stringify(next_item).length);
+            next_item = upload_queue_db.shift();
+          }
+          if (next_item) {
+            params.RequestItems[data_table].push( next_item );
+          }
+        }
+        // params.RequestItems[data_table] = upload_queue_db.splice(0,25);
         if (params.RequestItems[data_table].length > 0 ) {
-          interval_upload_promises.push( dynamo.batchWrite(params).promise().catch(function(err) {
+          console.log("Uploading "+JSON.stringify(params.RequestItems[data_table]).length,"worth of data");
+          var write_request = dynamo.batchWrite(params);
+          write_request.on('retry',function(resp) {
+            console.log("Stopping retry for "+params.RequestItems[data_table].length);
+            console.log("Size of total request is "+JSON.stringify(params.RequestItems[data_table]).length);
+            resp.error.retryable = false;
+            params.RequestItems[data_table].forEach(function(item) {
+              upload_queue_db.push(item);
+            });
+          });
+          interval_upload_promises.push( write_request.promise().catch(function(err) {
             console.log("BatchWriteErr",err);
           }).then(function(result) {
             if ( ! result.data.UnprocessedItems ) {
@@ -270,6 +302,8 @@ var split_file = function split_file(filekey,skip_remove) {
   var accessions = [];
   console.log(group_id,dataset_id);
   interval_uploader = null;
+  seen_empty_key = false;
+  upload_queue_db.length = 0;
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
     // Output data should end up looking like this:
     // {  'data': dat.value,
@@ -327,6 +361,26 @@ var datasets_containing_acc = function(acc) {
   });
 };
 
+var inflate_item = function(item) {
+  return new Promise(function(resolve,reject) {
+      if (! item.data) {
+        item.data = [];
+        resolve(item);
+        return;
+      }
+      zlib.inflate(new Buffer(item.data,'binary'),function(err,result) {
+        if (err) {
+          reject(err); 
+          console.log(err);
+          return;         
+        }
+        item.data = JSON.parse(result.toString('utf8'));
+        resolve(item);
+      });
+  });
+
+};
+
 var download_all_data_db = function(accession,grants) {
   var params = {
     TableName: data_table,
@@ -336,7 +390,7 @@ var download_all_data_db = function(accession,grants) {
     }
   };
   return dynamo.query(params).promise().then(function(data) {
-    return(data.data.Items.map(function(item) { return item; }));
+    return(Promise.all(data.data.Items.map(inflate_item)));
   });
 };
 
