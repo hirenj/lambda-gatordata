@@ -386,11 +386,57 @@ var download_all_data_db = function(accession,grants) {
     TableName: data_table,
     KeyConditionExpression: 'acc = :acc',
     ExpressionAttributeValues: {
-      ':acc': accession
+      ':acc': accession,
     }
   };
-  return dynamo.query(params).promise().then(function(data) {
-    return(Promise.all(data.data.Items.map(inflate_item)));
+  var params_metadata = {
+    TableName: data_table,
+    KeyConditionExpression: 'acc = :acc',
+    ExpressionAttributeValues: {
+      ':acc': 'metadata',
+    }
+  };
+  return Promise.all([
+    dynamo.query(params).promise(),
+    dynamo.query(params_metadata).promise()
+  ]).then(function(data) {
+    var meta_data = data[1];
+    var db_data = data[0];
+    return Promise.all(db_data.data.Items.map(inflate_item)).then(function(items) {
+      return meta_data.data.Items.concat(items);
+    });
+  }).then(filter_db_datasets.bind(null,grants));
+};
+
+var filter_db_datasets = function(grants,data) {
+  var sets = [];
+  var accession = null;
+  data.filter(function(data) {
+    if (data.acc !== 'metadata') {
+      accession = data.acc;
+    }
+    return data.acc == 'metadata';
+  }).forEach(function(set) {
+    sets = sets.concat(set.group_ids.values.map(function(group) { return { group_id: group, id: set.dataset }}));
+  });
+  var valid_sets = [];
+  // Filter metadata by the JWT permissions
+  sets.forEach(function(set) {
+    if (grants[set.group_id+'/'+set.id]) {
+      var valid_prots = grants[set.group_id+'/'+set.id];
+      if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+        valid_sets.push(set.id);
+      }
+    }
+    if (grants[set.group_id+'/*']) {
+      var valid_prots = grants[set.group_id+'/*'];
+      if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+        valid_sets.push(set.id);
+      }
+    }
+  });
+  return data.filter(function(dat) {
+    return dat.acc !== 'metadata' && valid_sets.indexOf(dat.dataset) >= 0;
   });
 };
 
@@ -479,11 +525,10 @@ var readAllData = function readAllData(event,context) {
     return;
   }
 
-  var grants = {};
+  var grants = event.grants ? JSON.parse(event.grants) : {};
 
   // Decode JWT
   // Get groups/datasets that can be read
-  grants = {};
   // grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
 
   download_all_data(accession,grants).then(function(entries) {
