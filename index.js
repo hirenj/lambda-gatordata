@@ -4,6 +4,7 @@ var dynamo = new AWS.DynamoDB.DocumentClient({region:'us-east-1'});
 var JSONStream = require('JSONStream');
 var fs = require('fs');
 var crypto = require('crypto');
+var zlib = require('zlib');
 
 require('es6-promise').polyfill();
 
@@ -26,16 +27,18 @@ promisify(AWS);
 
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
+var data_table = 'data';
 
 try {
     var config = require('./resources.conf.json');
     bucket_name = config.buckets.dataBucket;
     metadata_table = config.tables.datasets;
+    data_table = config.tables.data;
 } catch (e) {
 }
 
 
-var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta) {
+var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,meta) {
   var item = {};
   return new Promise(function(resolve,reject) {
     dynamo.put({'TableName' : metadata_table, 'Item' : {
@@ -53,7 +56,131 @@ var upload_metadata_dynamodb = function upload_metadata_dynamodb(set,group,meta)
   });
 };
 
+var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,meta) {
+  // Update item (set: acc, set_id, data) add group_id.
+  if (meta && meta.accessions.length < 1) {
+    return Promise.resolve(true);
+  }
+  var params = {
+   'TableName' : data_table,
+   'Key' : {'acc' : 'metadata', 'dataset' : set_id },
+   'UpdateExpression': 'ADD #gids :group',
+    'ExpressionAttributeValues': {
+        ':group': dynamo.createSet([ group_id ]),
+    },
+    'ExpressionAttributeNames' : {
+      '#gids' : 'group_ids'
+    }
+  };
+  console.log("Adding ",group_id," to set ",set_id);
+  return dynamo.update(params).promise();
+};
+
+var upload_metadata_dynamodb = function(set,group,meta) {
+  return upload_metadata_dynamodb_from_db(set,group,meta);
+}
+
+var upload_queue_db = [];
+var interval_uploader;
+var interval_upload_promises = [];
+var queue_empty_promise;
+var seen_empty_key = false;
+
+var upload_data_record_db = function upload_data_record_db(key,data) {
+  var key_elements = key ? key.split('/') : [];
+  var set_ids = (key_elements[2] || '').split(':');
+  var group_id = set_ids[0];
+  var set_id = set_ids[1];
+  var accession = key_elements[3];
+  if (key) {
+    if ( accession && set_id && data.data ) {
+      data.data.forEach(function(pep) {
+        if (pep.spectra) {
+          delete pep.spectra;
+        }
+      });
+      var block = {
+              'acc' : accession,
+              'dataset' : set_id
+      };
+      block.data = zlib.deflateSync(new Buffer(JSON.stringify(data.data),'utf8')).toString('binary');
+      upload_queue_db.push({
+        'PutRequest' : {
+          'Item' : block
+        }
+      });
+
+    }
+  }
+  if ( ! interval_uploader ) {
+    console.log("Setting interval_uploader");
+    queue_empty_promise = new Promise(function(resolve,reject) {
+      AWS.events.on('retry', function(resp) {
+        if (resp.error) resp.error.retryDelay = 1000;
+        resp.error.retryable = false;
+      });
+      interval_uploader = setTimeout(function() {
+        var params = { 'RequestItems' : {} };
+        console.log("Upload queue length is ",upload_queue_db.length);
+        params.RequestItems[data_table] = [];
+        while (upload_queue_db.length > 0 && params.RequestItems[data_table].length < 25  && JSON.stringify(params.RequestItems[data_table].concat(upload_queue_db[0])).length < 15000) {
+          var next_item = upload_queue_db.shift();
+          while (next_item && JSON.stringify(next_item).length > 12000) {
+            console.log("Size of data too big for ",next_item.PutRequest.Item.acc," skipping ",JSON.stringify(next_item).length);
+            next_item = upload_queue_db.shift();
+          }
+          if (next_item) {
+            params.RequestItems[data_table].push( next_item );
+          }
+        }
+        // params.RequestItems[data_table] = upload_queue_db.splice(0,25);
+        if (params.RequestItems[data_table].length > 0 ) {
+          console.log("Uploading "+JSON.stringify(params.RequestItems[data_table]).length,"worth of data");
+          var write_request = dynamo.batchWrite(params);
+          write_request.on('retry',function(resp) {
+            console.log("Stopping retry for "+params.RequestItems[data_table].length);
+            console.log("Size of total request is "+JSON.stringify(params.RequestItems[data_table]).length);
+            resp.error.retryable = false;
+            params.RequestItems[data_table].forEach(function(item) {
+              upload_queue_db.push(item);
+            });
+          });
+          interval_upload_promises.push( write_request.promise().catch(function(err) {
+            console.log("BatchWriteErr",err);
+          }).then(function(result) {
+            if ( ! result.data.UnprocessedItems ) {
+              return;
+            }
+            console.log("Adding ",result.data.UnprocessedItems[data_table].length,"items back onto queue");
+            result.data.UnprocessedItems[data_table].map(function(dat) {
+              return dat.PutRequest.Item;
+            }).forEach(function(item) {
+              upload_queue_db.push({'PutRequest': { 'Item' : item  } });
+            });
+          }));
+        } else {
+          if (seen_empty_key && upload_queue_db.length == 0) {
+            resolve(true);
+          }
+        }
+        interval_uploader = setTimeout(arguments.callee,1000);
+      },1000);
+    
+    });
+  }
+  if ( ! key ) {
+    seen_empty_key = true;
+    console.log("We have",interval_upload_promises.length,"upload batches");
+    return queue_empty_promise;
+  } else {
+    return Promise.resolve(true);
+  }
+};
+
 var upload_data_record_s3 = function upload_data_record_s3(key,data) {
+  if ( ! key ) {
+    return Promise.resolve(true);
+  }
   return new Promise(function(resolve,reject) {
     var params = {
       'Bucket': bucket_name,
@@ -76,7 +203,7 @@ var upload_data_record_s3 = function upload_data_record_s3(key,data) {
 };
 
 var upload_data_record = function upload_data_record(key,data) {
-  return upload_data_record_s3(key,data);
+  return upload_data_record_db(key,data);
 };
 
 var retrieve_file_s3 = function retrieve_file_s3(filekey) {
@@ -96,6 +223,34 @@ var retrieve_file = function retrieve_file(filekey) {
 }
 
 var remove_folder = function remove_folder(setkey) {
+  return remove_folder_db(setkey);
+};
+
+var remove_folder_db = function remove_folder_db(setkey) {
+  var group_id, dataset_id;
+  var ids = setkey.split(':');
+  group_id = ids[0];
+  set_id = ids[1];
+  // We should remove the group from the entries in the dataset
+  // Possibly another vacuum step to remove orphan datasets?
+  // Maybe just get rid of the group in the datasets
+  // table and then do a batch write?
+  console.log("Removing from set ",set_id,"group",group_id);
+  var params = {
+   'TableName' : data_table,
+   'Key' : { 'dataset' : set_id, 'acc' : 'metadata' },
+   'UpdateExpression': 'DELETE #gids :group',
+    'ExpressionAttributeValues': {
+        ':group': dynamo.createSet([ group_id ])
+    },
+    'ExpressionAttributeNames' : {
+      '#gids' : 'group_ids'
+    }
+  };
+  return dynamo.update(params).promise();
+};
+
+var remove_folder_s3 = function remove_folder_s3(setkey) {
   var params = {
     Bucket: bucket_name,
     Prefix: "data/latest/"+setkey+"/"
@@ -126,7 +281,7 @@ var remove_data = function remove_data(filekey) {
 };
 
 var split_file = function split_file(filekey,skip_remove) {
-
+  skip_remove = true;
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
@@ -146,6 +301,9 @@ var split_file = function split_file(filekey,skip_remove) {
 
   var accessions = [];
   console.log(group_id,dataset_id);
+  interval_uploader = null;
+  seen_empty_key = false;
+  upload_queue_db.length = 0;
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
     // Output data should end up looking like this:
     // {  'data': dat.value,
@@ -162,6 +320,7 @@ var split_file = function split_file(filekey,skip_remove) {
   //FIXME - upload metadata as the last part of the upload, marker of done.
   //        should be part of api request
   rs.pipe(JSONStream.parse(['metadata'])).on('data',function(dat) {
+    upload_promises.push(upload_data_record(null,null));
     upload_promises.push(upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'accessions' : accessions}));
   });
   return new Promise(function(resolve,reject) {
@@ -202,6 +361,85 @@ var datasets_containing_acc = function(acc) {
   });
 };
 
+var inflate_item = function(item) {
+  return new Promise(function(resolve,reject) {
+      if (! item.data) {
+        item.data = [];
+        resolve(item);
+        return;
+      }
+      zlib.inflate(new Buffer(item.data,'binary'),function(err,result) {
+        if (err) {
+          reject(err); 
+          console.log(err);
+          return;         
+        }
+        item.data = JSON.parse(result.toString('utf8'));
+        resolve(item);
+      });
+  });
+
+};
+
+var download_all_data_db = function(accession,grants) {
+  var params = {
+    TableName: data_table,
+    KeyConditionExpression: 'acc = :acc',
+    ExpressionAttributeValues: {
+      ':acc': accession,
+    }
+  };
+  var params_metadata = {
+    TableName: data_table,
+    KeyConditionExpression: 'acc = :acc',
+    ExpressionAttributeValues: {
+      ':acc': 'metadata',
+    }
+  };
+  return Promise.all([
+    dynamo.query(params).promise(),
+    dynamo.query(params_metadata).promise()
+  ]).then(function(data) {
+    var meta_data = data[1];
+    var db_data = data[0];
+    return Promise.all(db_data.data.Items.map(inflate_item)).then(function(items) {
+      return meta_data.data.Items.concat(items);
+    });
+  }).then(filter_db_datasets.bind(null,grants));
+};
+
+var filter_db_datasets = function(grants,data) {
+  var sets = [];
+  var accession = null;
+  data.filter(function(data) {
+    if (data.acc !== 'metadata') {
+      accession = data.acc;
+    }
+    return data.acc == 'metadata';
+  }).forEach(function(set) {
+    sets = sets.concat(set.group_ids.values.map(function(group) { return { group_id: group, id: set.dataset }}));
+  });
+  var valid_sets = [];
+  // Filter metadata by the JWT permissions
+  sets.forEach(function(set) {
+    if (grants[set.group_id+'/'+set.id]) {
+      var valid_prots = grants[set.group_id+'/'+set.id];
+      if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+        valid_sets.push(set.id);
+      }
+    }
+    if (grants[set.group_id+'/*']) {
+      var valid_prots = grants[set.group_id+'/*'];
+      if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+        valid_sets.push(set.id);
+      }
+    }
+  });
+  return data.filter(function(dat) {
+    return dat.acc !== 'metadata' && valid_sets.indexOf(dat.dataset) >= 0;
+  });
+};
+
 var download_set_s3 = function(set) {
   var params = {
     'Key' : 'data/latest/'+set,
@@ -218,6 +456,48 @@ var download_set_s3 = function(set) {
       resolve(result);
     });
   });
+};
+
+var download_all_data_s3 = function(accession,grants) {
+  // Get metadata entries that contain the desired accession
+  var start_time = (new Date()).getTime();
+  console.log("datasets_containing_acc start ");
+  return datasets_containing_acc(accession).then(function(sets) {
+    console.log("datasets_containing_acc end ",(new Date()).getTime() - start_time);
+    console.log(sets);
+    var valid_sets = [];
+    sets.forEach(function(set) {
+
+      // Filter metadata by the JWT permissions
+
+      if (grants[set.group_id+'/'+set.id]) {
+        var valid_prots = grants[set.group_id+'/'+set.id];
+        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+          valid_sets.push(set.group_id+':'+set.id);
+        }
+      }
+      if (grants[set.group_id+'/*']) {
+        var valid_prots = grants[set.group_id+'/*'];
+        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+          valid_sets.push(set.group_id+':'+set.id);
+        }
+      }
+    });
+    console.log(valid_sets.join(','));
+    return valid_sets;
+  }).then(function(sets) {
+    start_time = (new Date()).getTime();
+    // Get data from S3 and combine
+    console.log("download_set_s3 start");
+    return Promise.all(sets.map(function (set) { return download_set_s3(set+'/'+accession); })).then(function(entries) {
+      console.log("download_set_s3 end ",(new Date()).getTime() - start_time);
+      return entries;
+    });
+  });
+};
+
+var download_all_data = function(accession,grants) {
+  return download_all_data_db(accession,grants);
 };
 
 var combine_sets = function(entries) {
@@ -245,49 +525,16 @@ var readAllData = function readAllData(event,context) {
     return;
   }
 
-  var grants = {};
+  var grants = event.grants ? JSON.parse(event.grants) : {};
 
   // Decode JWT
   // Get groups/datasets that can be read
+  // grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
 
-  grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
-
-  // Get metadata entries that contain the desired accession
-  var start_time = (new Date()).getTime();
-  console.log("datasets_containing_acc start ");
-  datasets_containing_acc(accession).then(function(sets) {
-    console.log("datasets_containing_acc end ",(new Date()).getTime() - start_time);
-    console.log(sets);
-    var valid_sets = [];
-    sets.forEach(function(set) {
-
-      // Filter metadata by the JWT permissions
-
-      if (grants[set.group_id+'/'+set.id]) {
-        var valid_prots = grants[set.group_id+'/'+set.id];
-        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
-          valid_sets.push(set.group_id+':'+set.id);
-        }
-      }
-      if (grants[set.group_id+'/*']) {
-        var valid_prots = grants[set.group_id+'/*'];
-        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
-          valid_sets.push(set.group_id+':'+set.id);
-        }
-      }
-    });
-    console.log(valid_sets.join(','));
-    return valid_sets;
-  }).then(function(sets) {
-    start_time = (new Date()).getTime();
-    // Get data from S3 and combine
-    console.log("download_set_s3 start");
-    return Promise.all(sets.map(function (set) { return download_set_s3(set+'/'+accession); }));
-  }).then(function(sets) {
-    console.log("download_set_s3 end ",(new Date()).getTime() - start_time);
+  download_all_data(accession,grants).then(function(entries) {
     start_time = (new Date()).getTime();
     console.log("combine_sets start");
-    return sets;
+    return entries;
   }).then(combine_sets).then(function(combined) {
     console.log("combine_sets end ",(new Date()).getTime() - start_time);
     context.succeed(combined);

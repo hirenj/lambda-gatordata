@@ -1,27 +1,27 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
   "Resources": {
-    "datasets": {
+    "data": {
       "Type": "AWS::DynamoDB::Table",
       "Properties": {
-        "TableName" : { "Fn::Join" :  [ "-", [ { "Ref" : "AWS::StackName" }, "datasets" ] ] },
+        "TableName" : { "Fn::Join" :  [ "-", [ { "Ref" : "AWS::StackName" }, "data" ] ] },
         "AttributeDefinitions": [
           {
-            "AttributeName": "id",
+            "AttributeName": "acc",
             "AttributeType": "S"
           },
           {
-            "AttributeName": "group_id",
+            "AttributeName": "dataset",
             "AttributeType": "S"
           }
         ],
         "KeySchema": [
           {
-            "AttributeName": "id",
+            "AttributeName": "acc",
             "KeyType": "HASH"
           },
           {
-            "AttributeName": "group_id",
+            "AttributeName": "dataset",
             "KeyType" : "RANGE"
           }
         ],
@@ -217,10 +217,12 @@
             {
               "Effect": "Allow",
               "Action": [
+                  "dynamodb:BatchWriteItem",
                   "dynamodb:PutItem",
+                  "dynamodb:UpdateItem",
                   "dynamodb:GetItem"
               ],
-              "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "datasets" } ] ]}
+              "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "data" } ] ]}
             }
           ]
         }
@@ -246,9 +248,9 @@
               "Effect": "Allow",
               "Action": [
                   "dynamodb:GetItem",
-                  "dynamodb:Scan"
+                  "dynamodb:Query"
               ],
-              "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "datasets" } ] ]}
+              "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "data" } ] ]}
             }
           ]
         }
