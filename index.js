@@ -1,29 +1,13 @@
-var AWS = require('aws-sdk');
-var s3 = new AWS.S3({region:'us-east-1'});
-var dynamo = new AWS.DynamoDB.DocumentClient({region:'us-east-1'});
-var JSONStream = require('JSONStream');
-var fs = require('fs');
-var crypto = require('crypto');
-var zlib = require('zlib');
+'use strict';
+/*jshint esversion: 6, node:true */
 
-require('es6-promise').polyfill();
-
-var promisify = function(aws) {
-  aws.Request.prototype.promise = function() {
-    return new Promise(function(accept, reject) {
-      this.on('complete', function(response) {
-        if (response.error) {
-          reject(response.error);
-        } else {
-          accept(response);
-        }
-      });
-      this.send();
-    }.bind(this));
-  };
-};
-
-promisify(AWS);
+const AWS = require('lambda-helpers').AWS;
+const s3 = new AWS.S3();
+const dynamo = new AWS.DynamoDB.DocumentClient();
+const JSONStream = require('JSONStream');
+const fs = require('fs');
+const crypto = require('crypto');
+const zlib = require('zlib');
 
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
@@ -39,21 +23,11 @@ try {
 
 
 var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,meta) {
-  var item = {};
-  return new Promise(function(resolve,reject) {
-    dynamo.put({'TableName' : metadata_table, 'Item' : {
-      'accessions' : meta.accessions,
-      'id' : set,
-      'group_id' : group
-    }},function(err,result) {
-      if (err) {
-        console.log("Failed Dynamodb upload",err);
-        reject(err);
-        return;
-      }
-      resolve(result);
-    });
-  });
+  return dynamo.put({'TableName' : metadata_table, 'Item' : {
+    'accessions' : meta.accessions,
+    'id' : set,
+    'group_id' : group
+  }}).promise();
 };
 
 var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,meta) {
@@ -148,11 +122,11 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
           interval_upload_promises.push( write_request.promise().catch(function(err) {
             console.log("BatchWriteErr",err);
           }).then(function(result) {
-            if ( ! result.data.UnprocessedItems ) {
+            if ( ! result.UnprocessedItems ) {
               return;
             }
-            console.log("Adding ",result.data.UnprocessedItems[data_table].length,"items back onto queue");
-            result.data.UnprocessedItems[data_table].map(function(dat) {
+            console.log("Adding ",result.UnprocessedItems[data_table].length,"items back onto queue");
+            result.UnprocessedItems[data_table].map(function(dat) {
               return dat.PutRequest.Item;
             }).forEach(function(item) {
               upload_queue_db.push({'PutRequest': { 'Item' : item  } });
@@ -181,25 +155,16 @@ var upload_data_record_s3 = function upload_data_record_s3(key,data) {
   if ( ! key ) {
     return Promise.resolve(true);
   }
-  return new Promise(function(resolve,reject) {
-    var params = {
-      'Bucket': bucket_name,
-      'Key': key,
-      'ContentType': 'application/json'
-    };
-    var datablock = JSON.stringify(data);
-    params.Body = datablock;
-    params.ContentMD5 = new Buffer(crypto.createHash('md5').update(datablock).digest('hex'),'hex').toString('base64');
-    var options = {partSize: 15 * 1024 * 1024, queueSize: 1};
-    s3.upload(params, options, function(err, data) {
-      if (err) {
-        console.log("Failed uploading to S3", err);
-        reject(err);
-        return;
-      }
-      resolve(data);
-    });
-  });
+  var params = {
+    'Bucket': bucket_name,
+    'Key': key,
+    'ContentType': 'application/json'
+  };
+  var datablock = JSON.stringify(data);
+  params.Body = datablock;
+  params.ContentMD5 = new Buffer(crypto.createHash('md5').update(datablock).digest('hex'),'hex').toString('base64');
+  var options = {partSize: 15 * 1024 * 1024, queueSize: 1};
+  return s3.upload(params, options).promise();
 };
 
 var upload_data_record = function upload_data_record(key,data) {
@@ -258,13 +223,13 @@ var remove_folder_s3 = function remove_folder_s3(setkey) {
   console.log(params);
   return s3.listObjects(params).promise().then(function(result) {
     var params = {Bucket: bucket_name, Delete: { Objects: [] }};
-    params.Delete.Objects = result.data.Contents.map(function(content) { return { Key: content.Key }; });
+    params.Delete.Objects = result.Contents.map(function(content) { return { Key: content.Key }; });
     if (params.Delete.Objects.length < 1) {
       return Promise.resolve({"data" : { "Deleted" : [] }});
     }
     return s3.deleteObjects(params).promise();
   }).then(function(result) {
-    if (result.data.Deleted.length === 1000) {
+    if (result.Deleted.length === 1000) {
       return remove_folder(setkey);
     }
     return true;
@@ -350,14 +315,8 @@ var datasets_containing_acc = function(acc) {
     ExpressionAttributeNames : { '#accessions' : 'accessions'},
     ExpressionAttributeValues : {':acc' : acc.toLowerCase() }
   };
-  return new Promise(function(resolve,reject) {
-    dynamo.scan(params, function(err, data) {
-     if (err) {
-      reject(err);
-      return;
-     }
-     resolve(data.Items);
-    });
+  return dynamo.scan(params).promise().then(function(result) {
+    return result.Items;
   });
 };
 
@@ -402,8 +361,8 @@ var download_all_data_db = function(accession,grants) {
   ]).then(function(data) {
     var meta_data = data[1];
     var db_data = data[0];
-    return Promise.all(db_data.data.Items.map(inflate_item)).then(function(items) {
-      return meta_data.data.Items.concat(items);
+    return Promise.all(db_data.Items.map(inflate_item)).then(function(items) {
+      return meta_data.Items.concat(items);
     });
   }).then(filter_db_datasets.bind(null,grants));
 };
@@ -445,16 +404,10 @@ var download_set_s3 = function(set) {
     'Key' : 'data/latest/'+set,
     'Bucket' : bucket_name
   };
-  return new Promise(function(resolve,reject) {
-    s3.getObject(params,function(err,data) {
-      if (err) {
-        reject(err);
-        return;
-      }
-      var result = JSON.parse(data.Body);
-      result.dataset = set;
-      resolve(result);
-    });
+  s3.getObject(params).promise().then(function(data) {
+    var result = JSON.parse(data.Body);
+    result.dataset = set;
+    return result;
   });
 };
 
