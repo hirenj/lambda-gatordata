@@ -54,13 +54,12 @@ var upload_metadata_dynamodb = function(set,group,meta) {
   return upload_metadata_dynamodb_from_db(set,group,meta);
 }
 
-var upload_queue_db = [];
-var interval_uploader;
-var interval_upload_promises = [];
-var queue_empty_promise;
-var seen_empty_key = false;
-
 var upload_data_record_db = function upload_data_record_db(key,data) {
+  if ( ! uploader ) {
+    uploader = require('./dynamodb_rate').createUploader(data_table);
+    uploader.start();
+  }
+
   var key_elements = key ? key.split('/') : [];
   var set_ids = (key_elements[2] || '').split(':');
   var group_id = set_ids[0];
@@ -78,7 +77,7 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
               'dataset' : set_id
       };
       block.data = zlib.deflateSync(new Buffer(JSON.stringify(data.data),'utf8')).toString('binary');
-      upload_queue_db.push({
+      uploader.queue.push({
         'PutRequest' : {
           'Item' : block
         }
@@ -86,66 +85,11 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
 
     }
   }
-  if ( ! interval_uploader ) {
-    console.log("Setting interval_uploader");
-    queue_empty_promise = new Promise(function(resolve,reject) {
-      AWS.events.on('retry', function(resp) {
-        if (resp.error) resp.error.retryDelay = 1000;
-        resp.error.retryable = false;
-      });
-      interval_uploader = setTimeout(function() {
-        var params = { 'RequestItems' : {} };
-        console.log("Upload queue length is ",upload_queue_db.length);
-        params.RequestItems[data_table] = [];
-        while (upload_queue_db.length > 0 && params.RequestItems[data_table].length < 25  && JSON.stringify(params.RequestItems[data_table].concat(upload_queue_db[0])).length < 15000) {
-          var next_item = upload_queue_db.shift();
-          while (next_item && JSON.stringify(next_item).length > 12000) {
-            console.log("Size of data too big for ",next_item.PutRequest.Item.acc," skipping ",JSON.stringify(next_item).length);
-            next_item = upload_queue_db.shift();
-          }
-          if (next_item) {
-            params.RequestItems[data_table].push( next_item );
-          }
-        }
-        // params.RequestItems[data_table] = upload_queue_db.splice(0,25);
-        if (params.RequestItems[data_table].length > 0 ) {
-          console.log("Uploading "+JSON.stringify(params.RequestItems[data_table]).length,"worth of data");
-          var write_request = dynamo.batchWrite(params);
-          write_request.on('retry',function(resp) {
-            console.log("Stopping retry for "+params.RequestItems[data_table].length);
-            console.log("Size of total request is "+JSON.stringify(params.RequestItems[data_table]).length);
-            resp.error.retryable = false;
-            params.RequestItems[data_table].forEach(function(item) {
-              upload_queue_db.push(item);
-            });
-          });
-          interval_upload_promises.push( write_request.promise().catch(function(err) {
-            console.log("BatchWriteErr",err);
-          }).then(function(result) {
-            if ( ! result.UnprocessedItems ) {
-              return;
-            }
-            console.log("Adding ",result.UnprocessedItems[data_table].length,"items back onto queue");
-            result.UnprocessedItems[data_table].map(function(dat) {
-              return dat.PutRequest.Item;
-            }).forEach(function(item) {
-              upload_queue_db.push({'PutRequest': { 'Item' : item  } });
-            });
-          }));
-        } else {
-          if (seen_empty_key && upload_queue_db.length == 0) {
-            resolve(true);
-          }
-        }
-        interval_uploader = setTimeout(arguments.callee,1000);
-      },1000);
-    
-    });
-  }
   if ( ! key ) {
-    seen_empty_key = true;
-    console.log("We have",interval_upload_promises.length,"upload batches");
-    return queue_empty_promise;
+    uploader.setQueueReady();
+    return uploader.finished.promise.then(function() {
+      uploader = null;
+    });
   } else {
     return Promise.resolve(true);
   }
@@ -246,7 +190,6 @@ var remove_data = function remove_data(filekey) {
 };
 
 var split_file = function split_file(filekey,skip_remove) {
-  skip_remove = true;
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
