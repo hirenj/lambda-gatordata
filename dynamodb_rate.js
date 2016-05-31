@@ -3,8 +3,9 @@
 
 const AWS = require('lambda-helpers').AWS;
 const dynamo = new AWS.DynamoDB.DocumentClient();
+const zlib = require('zlib');
 
-import { EventEmitter } from 'events';
+const EventEmitter = require('events').EventEmitter;
 
 const queue_size = function queue_size(queue) {
   return JSON.stringify(queue).length
@@ -39,7 +40,7 @@ const interval_uploader = function(uploader,data_table,queue) {
       }
       console.log("Adding ",result.UnprocessedItems[data_table].length,"items back onto queue");
       result.UnprocessedItems[data_table]
-        .map((dat) => {'PutRequest': { 'Item' : dat.PutRequest.Item } })
+        .map((dat) => ({'PutRequest': { 'Item' : dat.PutRequest.Item } }) )
         .forEach((item) => queue.push(item));
     });
   } else {
@@ -48,7 +49,7 @@ const interval_uploader = function(uploader,data_table,queue) {
     }
   }
   if (uploader.running) {
-    setTimeout(arguments.callee.bind(null,uploader,data_table,queue),1000);    
+    setTimeout(interval_uploader.bind(null,uploader,data_table,queue),1000);
   }
 };
 
@@ -57,8 +58,9 @@ class TriggeredPromise extends EventEmitter {
     super()
   }
   get promise() {
+    let self = this;
     this._promise = this._promise || new Promise(function(resolve) {
-      this.on('resolved',function() {
+      self.on('resolved',function() {
         resolve();
       });
     });
@@ -73,13 +75,14 @@ class Uploader {
   constructor(data_table) {
     this.data_table = data_table;
     this.queue = [];
-    this.upload_promises = [];
   }
   start() {
     AWS.events.on('retry', function(resp) {
       if (resp.error) resp.error.retryDelay = 1000;
       resp.error.retryable = false;
     });
+    this.queue.length = 0;
+    this.running = true;
     this.finished = new TriggeredPromise();
     this.finished.on('resolved',() => this.running = false );
     interval_uploader(this,this.data_table,this.queue);
@@ -88,43 +91,5 @@ class Uploader {
     this.queue_ready = true;
   }
 }
-
-var upload_data_record_db = function upload_data_record_db(key,data) {
-
-  uploader.start();
-
-  var key_elements = key ? key.split('/') : [];
-  var set_ids = (key_elements[2] || '').split(':');
-  var group_id = set_ids[0];
-  var set_id = set_ids[1];
-  var accession = key_elements[3];
-  if (key) {
-    if ( accession && set_id && data.data ) {
-      data.data.forEach(function(pep) {
-        if (pep.spectra) {
-          delete pep.spectra;
-        }
-      });
-      var block = {
-              'acc' : accession,
-              'dataset' : set_id
-      };
-      block.data = zlib.deflateSync(new Buffer(JSON.stringify(data.data),'utf8')).toString('binary');
-      uploader.queue.push({
-        'PutRequest' : {
-          'Item' : block
-        }
-      });
-
-    }
-  }
-  if ( ! key ) {
-    uploader.setQueueReady();
-    console.log("We have",interval_upload_promises.length,"upload batches");
-    return uploader.finished.promise;
-  } else {
-    return Promise.resolve(true);
-  }
-};
 
 exports.createUploader = function(table) { return new Uploader(table); };

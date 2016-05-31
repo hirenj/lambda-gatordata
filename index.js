@@ -54,6 +54,8 @@ var upload_metadata_dynamodb = function(set,group,meta) {
   return upload_metadata_dynamodb_from_db(set,group,meta);
 }
 
+let uploader = null;
+
 var upload_data_record_db = function upload_data_record_db(key,data) {
   if ( ! uploader ) {
     uploader = require('./dynamodb_rate').createUploader(data_table);
@@ -136,10 +138,10 @@ var remove_folder = function remove_folder(setkey) {
 };
 
 var remove_folder_db = function remove_folder_db(setkey) {
-  var group_id, dataset_id;
-  var ids = setkey.split(':');
+  let group_id, dataset_id;
+  let ids = setkey.split(':');
   group_id = ids[0];
-  set_id = ids[1];
+  let set_id = ids[1];
   // We should remove the group from the entries in the dataset
   // Possibly another vacuum step to remove orphan datasets?
   // Maybe just get rid of the group in the datasets
@@ -209,9 +211,7 @@ var split_file = function split_file(filekey,skip_remove) {
 
   var accessions = [];
   console.log(group_id,dataset_id);
-  interval_uploader = null;
-  seen_empty_key = false;
-  upload_queue_db.length = 0;
+
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
     // Output data should end up looking like this:
     // {  'data': dat.value,
@@ -228,8 +228,9 @@ var split_file = function split_file(filekey,skip_remove) {
   //FIXME - upload metadata as the last part of the upload, marker of done.
   //        should be part of api request
   rs.pipe(JSONStream.parse(['metadata'])).on('data',function(dat) {
-    upload_promises.push(upload_data_record(null,null));
-    upload_promises.push(upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'accessions' : accessions}));
+    upload_promises.push( upload_data_record(null,null).then(function() {
+      return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'accessions' : accessions});
+    }));
   });
   return new Promise(function(resolve,reject) {
     rs.on('end',function() {
@@ -426,6 +427,7 @@ var readAllData = function readAllData(event,context) {
   // Decode JWT
   // Get groups/datasets that can be read
   // grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
+  let start_time = null;
 
   download_all_data(accession,grants).then(function(entries) {
     start_time = (new Date()).getTime();
