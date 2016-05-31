@@ -1,29 +1,13 @@
-var AWS = require('aws-sdk');
-var s3 = new AWS.S3({region:'us-east-1'});
-var dynamo = new AWS.DynamoDB.DocumentClient({region:'us-east-1'});
-var JSONStream = require('JSONStream');
-var fs = require('fs');
-var crypto = require('crypto');
-var zlib = require('zlib');
+'use strict';
+/*jshint esversion: 6, node:true */
 
-require('es6-promise').polyfill();
-
-var promisify = function(aws) {
-  aws.Request.prototype.promise = function() {
-    return new Promise(function(accept, reject) {
-      this.on('complete', function(response) {
-        if (response.error) {
-          reject(response.error);
-        } else {
-          accept(response);
-        }
-      });
-      this.send();
-    }.bind(this));
-  };
-};
-
-promisify(AWS);
+const AWS = require('lambda-helpers').AWS;
+const s3 = new AWS.S3();
+const dynamo = new AWS.DynamoDB.DocumentClient();
+const JSONStream = require('JSONStream');
+const fs = require('fs');
+const crypto = require('crypto');
+const zlib = require('zlib');
 
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
@@ -39,21 +23,11 @@ try {
 
 
 var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,meta) {
-  var item = {};
-  return new Promise(function(resolve,reject) {
-    dynamo.put({'TableName' : metadata_table, 'Item' : {
-      'accessions' : meta.accessions,
-      'id' : set,
-      'group_id' : group
-    }},function(err,result) {
-      if (err) {
-        console.log("Failed Dynamodb upload",err);
-        reject(err);
-        return;
-      }
-      resolve(result);
-    });
-  });
+  return dynamo.put({'TableName' : metadata_table, 'Item' : {
+    'accessions' : meta.accessions,
+    'id' : set,
+    'group_id' : group
+  }}).promise();
 };
 
 var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,meta) {
@@ -80,13 +54,14 @@ var upload_metadata_dynamodb = function(set,group,meta) {
   return upload_metadata_dynamodb_from_db(set,group,meta);
 }
 
-var upload_queue_db = [];
-var interval_uploader;
-var interval_upload_promises = [];
-var queue_empty_promise;
-var seen_empty_key = false;
+let uploader = null;
 
 var upload_data_record_db = function upload_data_record_db(key,data) {
+  if ( ! uploader ) {
+    uploader = require('./dynamodb_rate').createUploader(data_table);
+    uploader.start();
+  }
+
   var key_elements = key ? key.split('/') : [];
   var set_ids = (key_elements[2] || '').split(':');
   var group_id = set_ids[0];
@@ -104,7 +79,7 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
               'dataset' : set_id
       };
       block.data = zlib.deflateSync(new Buffer(JSON.stringify(data.data),'utf8')).toString('binary');
-      upload_queue_db.push({
+      uploader.queue.push({
         'PutRequest' : {
           'Item' : block
         }
@@ -112,66 +87,11 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
 
     }
   }
-  if ( ! interval_uploader ) {
-    console.log("Setting interval_uploader");
-    queue_empty_promise = new Promise(function(resolve,reject) {
-      AWS.events.on('retry', function(resp) {
-        if (resp.error) resp.error.retryDelay = 1000;
-        resp.error.retryable = false;
-      });
-      interval_uploader = setTimeout(function() {
-        var params = { 'RequestItems' : {} };
-        console.log("Upload queue length is ",upload_queue_db.length);
-        params.RequestItems[data_table] = [];
-        while (upload_queue_db.length > 0 && params.RequestItems[data_table].length < 25  && JSON.stringify(params.RequestItems[data_table].concat(upload_queue_db[0])).length < 15000) {
-          var next_item = upload_queue_db.shift();
-          while (next_item && JSON.stringify(next_item).length > 12000) {
-            console.log("Size of data too big for ",next_item.PutRequest.Item.acc," skipping ",JSON.stringify(next_item).length);
-            next_item = upload_queue_db.shift();
-          }
-          if (next_item) {
-            params.RequestItems[data_table].push( next_item );
-          }
-        }
-        // params.RequestItems[data_table] = upload_queue_db.splice(0,25);
-        if (params.RequestItems[data_table].length > 0 ) {
-          console.log("Uploading "+JSON.stringify(params.RequestItems[data_table]).length,"worth of data");
-          var write_request = dynamo.batchWrite(params);
-          write_request.on('retry',function(resp) {
-            console.log("Stopping retry for "+params.RequestItems[data_table].length);
-            console.log("Size of total request is "+JSON.stringify(params.RequestItems[data_table]).length);
-            resp.error.retryable = false;
-            params.RequestItems[data_table].forEach(function(item) {
-              upload_queue_db.push(item);
-            });
-          });
-          interval_upload_promises.push( write_request.promise().catch(function(err) {
-            console.log("BatchWriteErr",err);
-          }).then(function(result) {
-            if ( ! result.data.UnprocessedItems ) {
-              return;
-            }
-            console.log("Adding ",result.data.UnprocessedItems[data_table].length,"items back onto queue");
-            result.data.UnprocessedItems[data_table].map(function(dat) {
-              return dat.PutRequest.Item;
-            }).forEach(function(item) {
-              upload_queue_db.push({'PutRequest': { 'Item' : item  } });
-            });
-          }));
-        } else {
-          if (seen_empty_key && upload_queue_db.length == 0) {
-            resolve(true);
-          }
-        }
-        interval_uploader = setTimeout(arguments.callee,1000);
-      },1000);
-    
-    });
-  }
   if ( ! key ) {
-    seen_empty_key = true;
-    console.log("We have",interval_upload_promises.length,"upload batches");
-    return queue_empty_promise;
+    uploader.setQueueReady();
+    return uploader.finished.promise.then(function() {
+      uploader = null;
+    });
   } else {
     return Promise.resolve(true);
   }
@@ -181,25 +101,16 @@ var upload_data_record_s3 = function upload_data_record_s3(key,data) {
   if ( ! key ) {
     return Promise.resolve(true);
   }
-  return new Promise(function(resolve,reject) {
-    var params = {
-      'Bucket': bucket_name,
-      'Key': key,
-      'ContentType': 'application/json'
-    };
-    var datablock = JSON.stringify(data);
-    params.Body = datablock;
-    params.ContentMD5 = new Buffer(crypto.createHash('md5').update(datablock).digest('hex'),'hex').toString('base64');
-    var options = {partSize: 15 * 1024 * 1024, queueSize: 1};
-    s3.upload(params, options, function(err, data) {
-      if (err) {
-        console.log("Failed uploading to S3", err);
-        reject(err);
-        return;
-      }
-      resolve(data);
-    });
-  });
+  var params = {
+    'Bucket': bucket_name,
+    'Key': key,
+    'ContentType': 'application/json'
+  };
+  var datablock = JSON.stringify(data);
+  params.Body = datablock;
+  params.ContentMD5 = new Buffer(crypto.createHash('md5').update(datablock).digest('hex'),'hex').toString('base64');
+  var options = {partSize: 15 * 1024 * 1024, queueSize: 1};
+  return s3.upload(params, options).promise();
 };
 
 var upload_data_record = function upload_data_record(key,data) {
@@ -227,10 +138,10 @@ var remove_folder = function remove_folder(setkey) {
 };
 
 var remove_folder_db = function remove_folder_db(setkey) {
-  var group_id, dataset_id;
-  var ids = setkey.split(':');
+  let group_id, dataset_id;
+  let ids = setkey.split(':');
   group_id = ids[0];
-  set_id = ids[1];
+  let set_id = ids[1];
   // We should remove the group from the entries in the dataset
   // Possibly another vacuum step to remove orphan datasets?
   // Maybe just get rid of the group in the datasets
@@ -258,13 +169,13 @@ var remove_folder_s3 = function remove_folder_s3(setkey) {
   console.log(params);
   return s3.listObjects(params).promise().then(function(result) {
     var params = {Bucket: bucket_name, Delete: { Objects: [] }};
-    params.Delete.Objects = result.data.Contents.map(function(content) { return { Key: content.Key }; });
+    params.Delete.Objects = result.Contents.map(function(content) { return { Key: content.Key }; });
     if (params.Delete.Objects.length < 1) {
       return Promise.resolve({"data" : { "Deleted" : [] }});
     }
     return s3.deleteObjects(params).promise();
   }).then(function(result) {
-    if (result.data.Deleted.length === 1000) {
+    if (result.Deleted.length === 1000) {
       return remove_folder(setkey);
     }
     return true;
@@ -281,7 +192,6 @@ var remove_data = function remove_data(filekey) {
 };
 
 var split_file = function split_file(filekey,skip_remove) {
-  skip_remove = true;
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
@@ -301,9 +211,7 @@ var split_file = function split_file(filekey,skip_remove) {
 
   var accessions = [];
   console.log(group_id,dataset_id);
-  interval_uploader = null;
-  seen_empty_key = false;
-  upload_queue_db.length = 0;
+
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
     // Output data should end up looking like this:
     // {  'data': dat.value,
@@ -320,8 +228,9 @@ var split_file = function split_file(filekey,skip_remove) {
   //FIXME - upload metadata as the last part of the upload, marker of done.
   //        should be part of api request
   rs.pipe(JSONStream.parse(['metadata'])).on('data',function(dat) {
-    upload_promises.push(upload_data_record(null,null));
-    upload_promises.push(upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'accessions' : accessions}));
+    upload_promises.push( upload_data_record(null,null).then(function() {
+      return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'accessions' : accessions});
+    }));
   });
   return new Promise(function(resolve,reject) {
     rs.on('end',function() {
@@ -350,14 +259,8 @@ var datasets_containing_acc = function(acc) {
     ExpressionAttributeNames : { '#accessions' : 'accessions'},
     ExpressionAttributeValues : {':acc' : acc.toLowerCase() }
   };
-  return new Promise(function(resolve,reject) {
-    dynamo.scan(params, function(err, data) {
-     if (err) {
-      reject(err);
-      return;
-     }
-     resolve(data.Items);
-    });
+  return dynamo.scan(params).promise().then(function(result) {
+    return result.Items;
   });
 };
 
@@ -402,8 +305,8 @@ var download_all_data_db = function(accession,grants) {
   ]).then(function(data) {
     var meta_data = data[1];
     var db_data = data[0];
-    return Promise.all(db_data.data.Items.map(inflate_item)).then(function(items) {
-      return meta_data.data.Items.concat(items);
+    return Promise.all(db_data.Items.map(inflate_item)).then(function(items) {
+      return meta_data.Items.concat(items);
     });
   }).then(filter_db_datasets.bind(null,grants));
 };
@@ -445,16 +348,10 @@ var download_set_s3 = function(set) {
     'Key' : 'data/latest/'+set,
     'Bucket' : bucket_name
   };
-  return new Promise(function(resolve,reject) {
-    s3.getObject(params,function(err,data) {
-      if (err) {
-        reject(err);
-        return;
-      }
-      var result = JSON.parse(data.Body);
-      result.dataset = set;
-      resolve(result);
-    });
+  s3.getObject(params).promise().then(function(data) {
+    var result = JSON.parse(data.Body);
+    result.dataset = set;
+    return result;
   });
 };
 
@@ -530,6 +427,7 @@ var readAllData = function readAllData(event,context) {
   // Decode JWT
   // Get groups/datasets that can be read
   // grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
+  let start_time = null;
 
   download_all_data(accession,grants).then(function(entries) {
     start_time = (new Date()).getTime();
