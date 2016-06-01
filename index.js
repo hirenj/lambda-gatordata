@@ -22,6 +22,23 @@ try {
 }
 
 
+var get_current_md5 = function get_current_md5(filekey) {
+  var filekey_components = filekey.split('/');
+  var group_id = filekey_components[2];
+  var dataset_id = filekey_components[1];
+  var params_metadata = {
+    TableName: data_table,
+    KeyConditionExpression: 'acc = :acc and dataset = :dataset',
+    ExpressionAttributeValues: {
+      ':acc': 'metadata',
+      ':dataset' : dataset_id
+    }
+  };
+  return dynamo.query(params_metadata).promise().then(function(data) {
+    return data.Items[0].md5;
+  });
+};
+
 var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,meta) {
   return dynamo.put({'TableName' : metadata_table, 'Item' : {
     'accessions' : meta.accessions,
@@ -31,21 +48,38 @@ var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3
 };
 
 var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,meta) {
-  // Update item (set: acc, set_id, data) add group_id.
-  if (meta && meta.accessions.length < 1) {
+  if (meta.remove) {
+    // Don't need to remove the group id as it's already deleted
     return Promise.resolve(true);
   }
-  var params = {
-   'TableName' : data_table,
-   'Key' : {'acc' : 'metadata', 'dataset' : set_id },
-   'UpdateExpression': 'ADD #gids :group',
-    'ExpressionAttributeValues': {
-        ':group': dynamo.createSet([ group_id ]),
-    },
-    'ExpressionAttributeNames' : {
-      '#gids' : 'group_ids'
-    }
-  };
+  var params;
+  if (meta.md5 && ! meta.notmodified) {
+    params = {
+     'TableName' : data_table,
+     'Key' : {'acc' : 'metadata', 'dataset' : set_id },
+     'UpdateExpression': 'SET #md5 = :md5 ADD #gids :group',
+      'ExpressionAttributeValues': {
+          ':group': dynamo.createSet([ group_id ]),
+          ':md5'  : meta.md5
+      },
+      'ExpressionAttributeNames' : {
+        '#gids' : 'group_ids',
+        '#md5' : 'md5'
+      }
+    };
+  } else {
+    params = {
+     'TableName' : data_table,
+     'Key' : {'acc' : 'metadata', 'dataset' : set_id },
+     'UpdateExpression': 'ADD #gids :group',
+      'ExpressionAttributeValues': {
+          ':group': dynamo.createSet([ group_id ])
+      },
+      'ExpressionAttributeNames' : {
+        '#gids' : 'group_ids'
+      }
+    };
+  }
   console.log("Adding ",group_id," to set ",set_id);
   return dynamo.update(params).promise();
 };
@@ -117,20 +151,25 @@ var upload_data_record = function upload_data_record(key,data) {
   return upload_data_record_db(key,data);
 };
 
-var retrieve_file_s3 = function retrieve_file_s3(filekey) {
+var retrieve_file_s3 = function retrieve_file_s3(filekey,md5_result) {
   var params = {
     'Key' : filekey,
-    'Bucket' : bucket_name
+    'Bucket' : bucket_name,
+    'IfNoneMatch' : md5_result.old+"",
   };
-  return s3.getObject(params).createReadStream();
+  return s3.getObject(params,function(err,data) {
+    if ( ! err ) {
+      md5_result.md5 = data.ETag;
+    }
+  }).createReadStream();
 }
 
 var retrieve_file_local = function retrieve_file_local(filekey) {
   return fs.createReadStream(filekey);
 }
 
-var retrieve_file = function retrieve_file(filekey) {
-  return retrieve_file_s3(filekey);
+var retrieve_file = function retrieve_file(filekey,md5_result) {
+  return retrieve_file_s3(filekey,md5_result);
 }
 
 var remove_folder = function remove_folder(setkey) {
@@ -187,11 +226,11 @@ var remove_data = function remove_data(filekey) {
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
   return remove_folder(group_id+":"+dataset_id).then(function() {
-    return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': {}, 'accessions' : []});
+    return upload_metadata_dynamodb(dataset_id,group_id,{'remove': true});
   });
 };
 
-var split_file = function split_file(filekey,skip_remove) {
+var split_file = function split_file(filekey,skip_remove,current_md5) {
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
@@ -202,15 +241,17 @@ var split_file = function split_file(filekey,skip_remove) {
 
   if (! skip_remove) {
     return remove_folder(group_id+":"+dataset_id).then(function() {
-      return split_file(filekey,true);
+      return split_file(filekey,true,current_md5);
     });
   }
 
-  var rs = retrieve_file(filekey);
+  var md5_result = { old: current_md5 };
+
+  var rs = retrieve_file(filekey,md5_result);
   var upload_promises = [];
 
   var accessions = [];
-  console.log(group_id,dataset_id);
+  console.log(group_id,dataset_id,md5_result);
 
   rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
     // Output data should end up looking like this:
@@ -229,7 +270,7 @@ var split_file = function split_file(filekey,skip_remove) {
   //        should be part of api request
   rs.pipe(JSONStream.parse(['metadata'])).on('data',function(dat) {
     upload_promises.push( upload_data_record(null,null).then(function() {
-      return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'accessions' : accessions});
+      return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'md5' : md5_result.md5, 'accessions' : accessions});
     }));
   });
   return new Promise(function(resolve,reject) {
@@ -239,6 +280,10 @@ var split_file = function split_file(filekey,skip_remove) {
     rs.on('error',function(err) {
       reject(err);
     });
+  }).catch(function(err) {
+    if (err.statusCode == 304) {
+      return upload_metadata_dynamodb(dataset_id,group_id,{'notmodified' : true});
+    }
   });
 };
 
@@ -452,7 +497,7 @@ var splitFile = function splitFile(event,context) {
   }
   if (event.Records[0].eventName.match(/ObjectCreated/)) {
     console.log("Splitting data at ",filekey);
-    result_promise = split_file(filekey);
+    result_promise = get_current_md5(filekey).then( split_file.bind(null,filekey,null) );
   }
   result_promise.then(function(done) {
     console.log("Uploaded all components");
