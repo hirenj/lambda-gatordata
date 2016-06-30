@@ -35,7 +35,7 @@ var get_current_md5 = function get_current_md5(filekey) {
     }
   };
   return dynamo.query(params_metadata).promise().then(function(data) {
-    return data.Items[0].md5;
+    return data.Items & data.Items.length > 0 ? data.Items[0].md5 : null;
   });
 };
 
