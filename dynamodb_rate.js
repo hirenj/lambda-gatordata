@@ -15,9 +15,9 @@ const interval_uploader = function(uploader,data_table,queue) {
   var params = { 'RequestItems' : {} };
   console.log("Upload queue length is ",queue.length);
   params.RequestItems[data_table] = [];
-  while (queue.length > 0 && params.RequestItems[data_table].length < 25  && queue_size(params.RequestItems[data_table].concat(queue[0])) < 15000) {
+  while (queue.length > 0 && params.RequestItems[data_table].length < 25  && queue_size(params.RequestItems[data_table].concat(queue[0])) < uploader.maxTheoreticalCapacity()) {
     let next_item = queue.shift();
-    while (next_item && JSON.stringify(next_item).length > 12000) {
+    while (next_item && JSON.stringify(next_item).length > Math.floor(0.8*uploader.maxTheoreticalCapacity()) ) {
       console.log("Size of data too big for ",next_item.PutRequest.Item.acc," skipping ",JSON.stringify(next_item).length);
       next_item = queue.shift();
     }
@@ -25,8 +25,9 @@ const interval_uploader = function(uploader,data_table,queue) {
       params.RequestItems[data_table].push( next_item );
     }
   }
+  let last_batch_size = queue_size(params.RequestItems[data_table]);
   if (params.RequestItems[data_table].length > 0 ) {
-    console.log("Uploading "+queue_size(params.RequestItems[data_table]),"worth of data");
+    console.log("Uploading",last_batch_size,"worth of data");
     var write_request = dynamo.batchWrite(params);
     write_request.on('retry',function(resp) {
       resp.error.retryable = false;
@@ -49,6 +50,7 @@ const interval_uploader = function(uploader,data_table,queue) {
     }
   }
   if (uploader.running) {
+    let timeout =  Math.floor(1000 * last_batch_size / uploader.maxTheoreticalCapacity());
     setTimeout(interval_uploader.bind(null,uploader,data_table,queue),1000);
   }
 };
@@ -86,6 +88,9 @@ class Uploader {
     this.finished = new TriggeredPromise();
     this.finished.on('resolved',() => this.running = false );
     interval_uploader(this,this.data_table,this.queue);
+  }
+  maxTheoreticalCapacity() {
+    return 15*1024;
   }
   setQueueReady() {
     this.queue_ready = true;
