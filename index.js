@@ -157,11 +157,12 @@ var retrieve_file_s3 = function retrieve_file_s3(filekey,md5_result) {
     'Bucket' : bucket_name,
     'IfNoneMatch' : md5_result.old+"",
   };
-  return s3.getObject(params,function(err,data) {
-    if ( ! err ) {
-      md5_result.md5 = data.ETag;
-    }
-  }).createReadStream();
+  var request = s3.getObject(params);
+  var stream = request.createReadStream();
+  stream.on('finish',function() {
+    md5_result.md5 = request.response.data.ETag;
+  });
+  return stream;
 }
 
 var retrieve_file_local = function retrieve_file_local(filekey) {
