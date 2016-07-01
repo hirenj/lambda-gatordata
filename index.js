@@ -9,6 +9,9 @@ const fs = require('fs');
 const crypto = require('crypto');
 const zlib = require('zlib');
 
+const Queue = require('lambda-helpers').queue;
+const Events = require('lambda-helpers').events;
+
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
 var data_table = 'data';
@@ -450,6 +453,51 @@ var combine_sets = function(entries) {
   var results = {"data" : []};
   results.data = entries.map(function(entry) { return entry });
   return results;
+};
+
+var runQueue = function() {
+  let queue = new Queue('https://...');
+  queue.shift(1).then(function(message) {
+    if ( ! message ) {
+      Events.subscribe.. set inactive count to +1
+      Events.setTimeout(... sometime in future ...)
+    }
+    uploader = splitFile(message.path,message.offset);
+    uploader.on('finished',function() {
+      message.finalise();
+      // Terminate function
+      // clear timeout
+    });
+    setTimeout(function() {
+      // Wait for any requests to finalise
+      // then look at the queue.
+      uploader.pause().then(function() {
+        return queue.sendMessage({'path' : path, 'offset' : offset });
+      }).then(function() {
+        message.finalise();
+        Events.subscribe... set inactive count to 0
+      });
+    },4.5 minutes);
+  });
+  // Consume item from queue
+  // Item should go back on queue if it is > 5 minutes old
+  // offset to start of queue
+  // s3 path
+
+  // run splitFile
+  // wait for 4.75 minutes (or x seconds of sends)
+  // Don't push any more on the queue
+  // push file + first item onto queue list, get rid of current item from queue
+  // Run runQueue after 1 minute
+  // Deactivate runQueue if there aren't any
+  // items on the queue
+};
+
+var enQueue = function(event) {
+  // Push the S3 object onto the queue with a null start
+  // run runQueue after 1 minute
+  Events.setInterval(func, 10*1000);
+
 };
 
 /*
