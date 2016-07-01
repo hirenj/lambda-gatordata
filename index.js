@@ -103,9 +103,12 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
   var accession = key_elements[3];
   if (key) {
     if ( accession && set_id && data.data ) {
-      data.data.forEach(function(pep) {
-        if (pep.spectra) {
-          delete pep.spectra;
+      data.data.forEach(function(obj) {
+        if (obj.spectra) {
+          delete obj.spectra;
+        }
+        if (obj.interpro) {
+          delete obj.interpro;
         }
       });
       var block = {
