@@ -15,12 +15,14 @@ const Events = require('lambda-helpers').events;
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
 var data_table = 'data';
+var split_queue = 'SplitQueue';
 
 try {
     var config = require('./resources.conf.json');
     bucket_name = config.buckets.dataBucket;
     metadata_table = config.tables.datasets;
     data_table = config.tables.data;
+    split_queue = config.queue.SplitQueue;
 } catch (e) {
 }
 
@@ -470,17 +472,21 @@ var combine_sets = function(entries) {
 //   - Discard item from the queue (unless there's an error, so put it back)
 
 var runQueue = function() {
-  let queue = new Queue('https://...');
+  let queue = new Queue(split_queue);
+  Events.setTimeout('runSplitFiles',new Date(new Date().getTime() + 5*60*1000));
   queue.shift(1).then(function(message) {
     if ( ! message ) {
-      Events.subscribe.. set inactive count to +1
-      Events.setTimeout(... sometime in future ...)
+      // Modify table, reducing write capacity
+      Events.setTimeout('runSplitFiles',new Date(new Date().getTime() + 8*60*60*1000));
+      return;
     }
+
+    // Modify table, increasing write capacity if needed
+
     uploader = splitFile(message.path,message.offset);
     uploader.on('finished',function() {
       message.finalise();
-      // Terminate function
-      // clear timeout
+      Events.setTimeout('runSplitFiles',new Date(new Date().getTime() + 1*1000));
     });
     setTimeout(function() {
       // Wait for any requests to finalise
@@ -489,22 +495,13 @@ var runQueue = function() {
         return queue.sendMessage({'path' : path, 'offset' : offset });
       }).then(function() {
         message.finalise();
-        Events.subscribe... set inactive count to 0
       });
-    },4.5 minutes);
+    },4.5*60*1000);
   });
   // Consume item from queue
   // Item should go back on queue if it is > 5 minutes old
   // offset to start of queue
   // s3 path
-
-  // run splitFile
-  // wait for 4.75 minutes (or x seconds of sends)
-  // Don't push any more on the queue
-  // push file + first item onto queue list, get rid of current item from queue
-  // Run runQueue after 1 minute
-  // Deactivate runQueue if there aren't any
-  // items on the queue
 };
 
 var enQueue = function(event) {
