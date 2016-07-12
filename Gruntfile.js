@@ -34,6 +34,15 @@ module.exports = function(grunt) {
 				function: config.functions['splitFiles'] || 'splitFiles',
 				arn: null,
 			},
+			runSplitQueue: {
+				package: 'gatordata',
+				options: {
+					file_name: 'index.js',
+					handler: 'index.runSplitQueue',
+				},
+				function: config.functions['runSplitQueue'] || 'runSplitQueue',
+				arn: null,
+			},
 			readAllData: {
 				package: 'gatordata',
 				options: {
@@ -51,6 +60,9 @@ module.exports = function(grunt) {
 			},
 			readAllData: {
 				package: 'gatordata',
+			},
+			runSplitQueue: {
+				package: 'gatordata',
 			}
 		},
 		env: {
@@ -62,6 +74,7 @@ module.exports = function(grunt) {
 	});
 
 	grunt.registerTask('deploy:readAllData', ['env:prod', 'lambda_package:readAllData', 'lambda_deploy:readAllData']);
+	grunt.registerTask('deploy:runSplitQueue', ['env:prod', 'lambda_package:runSplitQueue', 'lambda_deploy:runSplitQueue']);
 	grunt.registerTask('deploy:splitFile', ['env:prod', 'lambda_package:splitFile', 'lambda_deploy:splitFile']);
 	grunt.registerTask('deploy', ['env:prod', 'lambda_package', 'lambda_deploy']);
 	grunt.registerTask('test', ['lambda_invoke']);
