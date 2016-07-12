@@ -471,8 +471,11 @@ var combine_sets = function(entries) {
 //     offset back onto the queue.
 //   - Discard item from the queue (unless there's an error, so put it back)
 
-var runQueue = function() {
+var runSplitQueue = function() {
   let queue = new Queue(split_queue);
+
+  // We should do a pre-emptive subscribe for the event here
+
   Events.setTimeout('runSplitFiles',new Date(new Date().getTime() + 5*60*1000));
   queue.shift(1).then(function(message) {
     if ( ! message ) {
@@ -572,3 +575,4 @@ var splitFile = function splitFile(event,context) {
 
 exports.splitFile = splitFile;
 exports.readAllData = readAllData;
+exports.runSplitQueue = runSplitQueue;
