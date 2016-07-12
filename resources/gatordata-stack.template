@@ -310,42 +310,42 @@
           ]
         }
       }
-    }
-  },
-  "ConsumeSplitQueue": {
-    "Type": "AWS::IAM::ManagedPolicy",
-    "Properties" : {
-      "Description" : "ConsumeSplitQueue",
-      "PolicyDocument" : {
-          "Id" : "ConsumeSplitQueue",
+    },
+    "ConsumeSplitQueue": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "ConsumeSplitQueue",
+        "PolicyDocument" : {
+            "Id" : "ConsumeSplitQueue",
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                  "Sid": "ConsumeSplitQueueSQS",
+                  "Effect": "Allow",
+                  "Action": [ "sqs:ReceiveMessage", "sqs:GetQueueUrl","sqs:ChangeMessageVisibility", "sqs:DeleteMessage", "sqs:GetQueueAttributes" ],
+                  "Resource" : { "Fn::GetAtt" : ["SplitQueue","Arn"]}
+                }
+            ]
+        }
+      },
+      "DependsOn": "SplitQueue"
+    },
+    "UpdateDataTableCapacity": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "Update capacity for writing to data table",
+        "PolicyDocument" : {
           "Version": "2012-10-17",
           "Statement": [
-              {
-                "Sid": "ConsumeSplitQueueSQS",
-                "Effect": "Allow",
-                "Action": [ "sqs:ReceiveMessage", "sqs:GetQueueUrl","sqs:ChangeMessageVisibility", "sqs:DeleteMessage", "sqs:GetQueueAttributes" ],
-                "Resource" : { "Fn::GetAtt" : ["SplitQueue","Arn"]}
-              }
+            {
+              "Effect": "Allow",
+              "Action": [
+                  "dynamodb:UpdateTable"
+              ],
+              "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "data" } ] ]}
+            }
           ]
-      }
-    },
-    "DependsOn": "SplitQueue"
-  },
-  "UpdateDataTableCapacity": {
-    "Type": "AWS::IAM::ManagedPolicy",
-    "Properties" : {
-      "Description" : "Update capacity for writing to data table",
-      "PolicyDocument" : {
-        "Version": "2012-10-17",
-        "Statement": [
-          {
-            "Effect": "Allow",
-            "Action": [
-                "dynamodb:UpdateTable"
-            ],
-            "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "data" } ] ]}
-          }
-        ]
+        }
       }
     }
   },
