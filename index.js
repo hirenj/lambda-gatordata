@@ -93,6 +93,10 @@ var upload_metadata_dynamodb = function(set,group,meta) {
 
 let uploader = null;
 
+// This should really be a stream so that
+// we don't end up keeping all the elements
+// in memory.. filter?
+
 var upload_data_record_db = function upload_data_record_db(key,data) {
   if ( ! uploader ) {
     uploader = require('./dynamodb_rate').createUploader(data_table);
@@ -455,6 +459,16 @@ var combine_sets = function(entries) {
   return results;
 };
 
+// Timings for runQueue
+
+// Run runQueue every 8 hours
+//   Always setTimeout(5 mins) (from start of execution)
+//   - On empty queue setTimeout(+ 8 hours)
+//   - On early finish of upload, setTimeout(2 seconds) (from end of upload)
+//   - If it doesn't look like we will finish - pause execution, push the
+//     offset back onto the queue.
+//   - Discard item from the queue (unless there's an error, so put it back)
+
 var runQueue = function() {
   let queue = new Queue('https://...');
   queue.shift(1).then(function(message) {
@@ -495,9 +509,6 @@ var runQueue = function() {
 
 var enQueue = function(event) {
   // Push the S3 object onto the queue with a null start
-  // run runQueue after 1 minute
-  Events.setInterval(func, 10*1000);
-
 };
 
 /*
