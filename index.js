@@ -471,25 +471,33 @@ var combine_sets = function(entries) {
 //     offset back onto the queue.
 //   - Discard item from the queue (unless there's an error, so put it back)
 
-var runSplitQueue = function() {
+var runSplitQueue = function(event,context) {
+  console.log("Getting queue object");
   let queue = new Queue(split_queue);
 
   // We should do a pre-emptive subscribe for the event here
-
-  Events.setTimeout('runSplitFiles',new Date(new Date().getTime() + 5*60*1000));
-  queue.shift(1).then(function(message) {
-    if ( ! message ) {
+  console.log("Setting timeout for event");
+  let self_event = Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 5*60*1000)).then(function() {;
+    console.log("Making sure function is subscribed to event");
+    return Events.subscribe('runSplitQueue',context.invokedFunctionArn,{});
+  });
+  return self_event.then(() => queue.shift(1)).then(function(messages) {
+    console.log("Got queue messages ",messages);
+    if ( ! messages || ! messages.length ) {
       // Modify table, reducing write capacity
-      Events.setTimeout('runSplitFiles',new Date(new Date().getTime() + 8*60*60*1000));
-      return;
+      console.log("Disabling runSplitQueue for 8 hours");
+      return Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 8*60*60*1000));
     }
+    
+    let message = messages[1];
 
     // Modify table, increasing write capacity if needed
 
-    uploader = splitFile(message.path,message.offset);
+    uploader = get_current_md5(message.path).then( split_file.bind(null,message.path,null) );
+
     uploader.on('finished',function() {
       message.finalise();
-      Events.setTimeout('runSplitFiles',new Date(new Date().getTime() + 1*1000));
+      Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 1*1000));
     });
     setTimeout(function() {
       // Wait for any requests to finalise
