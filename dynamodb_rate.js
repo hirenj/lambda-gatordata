@@ -31,7 +31,7 @@ const interval_uploader = function(uploader,data_table,queue) {
     var write_request = dynamo.batchWrite(params);
     write_request.on('retry',function(resp) {
       resp.error.retryable = false;
-      params.RequestItems[data_table].forEach((item) => queue.push(item));
+      params.RequestItems[data_table].reverse().forEach((item) => queue.unshift(item));
     });
     uploader.last_write = write_request.promise().catch(function(err) {
       console.log("BatchWriteErr",err);
@@ -42,7 +42,8 @@ const interval_uploader = function(uploader,data_table,queue) {
       console.log("Adding ",result.UnprocessedItems[data_table].length,"items back onto queue");
       result.UnprocessedItems[data_table]
         .map((dat) => ({'PutRequest': { 'Item' : dat.PutRequest.Item } }) )
-        .forEach((item) => queue.push(item));
+        .reverse()
+        .forEach((item) => queue.unshift(item));
     });
   } else {
     if (uploader.queue_ready && queue.length == 0) {      
