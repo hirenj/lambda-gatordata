@@ -493,17 +493,17 @@ var runSplitQueue = function(event,context) {
 
     // Modify table, increasing write capacity if needed
 
-    uploader = get_current_md5(message.path).then( split_file.bind(null,message.path,null) );
-
-    uploader.on('finished',function() {
+    return get_current_md5(message.path)
+    .then( split_file.bind(null,message.path,null) )
+    .then(function() {
       message.finalise();
       Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 1*1000));
     });
     setTimeout(function() {
       // Wait for any requests to finalise
       // then look at the queue.
-      uploader.pause().then(function() {
-        return queue.sendMessage({'path' : path, 'offset' : offset });
+      uploader.stop().then(function() {
+        return queue.sendMessage({'path' : message.path, 'offset' : uploader.queue[0] });
       }).then(function() {
         message.finalise();
       });

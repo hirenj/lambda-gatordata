@@ -33,7 +33,7 @@ const interval_uploader = function(uploader,data_table,queue) {
       resp.error.retryable = false;
       params.RequestItems[data_table].forEach((item) => queue.push(item));
     });
-    write_request.promise().catch(function(err) {
+    uploader.last_write = write_request.promise().catch(function(err) {
       console.log("BatchWriteErr",err);
     }).then(function(result) {
       if ( ! result.UnprocessedItems ) {
@@ -88,6 +88,10 @@ class Uploader {
     this.finished = new TriggeredPromise();
     this.finished.on('resolved',() => this.running = false );
     interval_uploader(this,this.data_table,this.queue);
+  }
+  stop() {
+    this.running = false;
+    return this.last_write;
   }
   maxTheoreticalCapacity() {
     return 15*1024;
