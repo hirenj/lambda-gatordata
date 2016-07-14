@@ -498,6 +498,7 @@ var runSplitQueue = function(event,context) {
     .then( split_file.bind(null,message_body.path,null) )
     .then(function() {
       message.finalise();
+      uploader = null;
       console.log("Finished reading file, calling runSplitQueue immediately");
       Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 1*1000));
     });
@@ -512,6 +513,7 @@ var runSplitQueue = function(event,context) {
         console.log(err.stack);
         console.log(err);
       }).then(function() {
+        uploader = null;
         message.finalise();
       });
     },20*1000);

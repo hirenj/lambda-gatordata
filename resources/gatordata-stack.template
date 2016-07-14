@@ -116,7 +116,7 @@
     "LambdaRunSplitQueueRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
-        "ManagedPolicyArns" : [ {"Ref" : "RegisterEvents"}, {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }],
+        "ManagedPolicyArns" : [ {"Ref" : "RegisterEvents"}, {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }, {"Ref" : "WriteSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
@@ -329,6 +329,24 @@
         }
       },
       "DependsOn": "SplitQueue"
+    },
+    "WriteSplitQueue": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "WriteSplitQueue",
+        "PolicyDocument" : {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                  "Sid": "WriteSplitQueue",
+                  "Effect": "Allow",
+                  "Action": "sqs:SendMessage",
+                  "Resource" : { "Fn::GetAtt" : ["SplitQueue","Arn"]}
+                }
+            ]
+        }
+      },
+      "DependsOn": "DownloadQueue"
     },
     "UpdateDataTableCapacity": {
       "Type": "AWS::IAM::ManagedPolicy",
