@@ -27,7 +27,7 @@ const interval_uploader = function(uploader,data_table,queue) {
   }
   let last_batch_size = queue_size(params.RequestItems[data_table]);
   if (params.RequestItems[data_table].length > 0 ) {
-    console.log("Uploading",last_batch_size,"worth of data");
+    console.log("Uploading",last_batch_size,"worth of data for",params.RequestItems[data_table].length,"entries");
     var write_request = dynamo.batchWrite(params);
     write_request.on('retry',function(resp) {
       resp.error.retryable = false;

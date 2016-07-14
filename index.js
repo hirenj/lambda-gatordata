@@ -243,7 +243,7 @@ var remove_data = function remove_data(filekey) {
   });
 };
 
-var split_file = function split_file(filekey,skip_remove,current_md5) {
+var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
@@ -254,7 +254,7 @@ var split_file = function split_file(filekey,skip_remove,current_md5) {
 
   if (! skip_remove) {
     return remove_folder(group_id+":"+dataset_id).then(function() {
-      return split_file(filekey,true,current_md5);
+      return split_file(filekey,true,current_md5,offset);
     });
   }
 
@@ -273,9 +273,14 @@ var split_file = function split_file(filekey,skip_remove,current_md5) {
     //    'title' : "Title" }
 
     var datablock = {'data': dat.value };
-
+    if (offset && dat.key.toLowerCase() === offset) {
+      console.log("Using offset to start at ",offset);
+      offset = null;
+    }
+    if (offset) {
+      return;
+    }
     accessions.push(dat.key.toLowerCase());
-
     upload_promises.push(upload_data_record("data/latest/"+group_id+":"+dataset_id+"/"+dat.key.toLowerCase(), datablock));
   });
 
@@ -495,7 +500,7 @@ var runSplitQueue = function(event,context) {
     // Modify table, increasing write capacity if needed
 
     let result = get_current_md5(message_body.path)
-    .then( split_file.bind(null,message_body.path,null) )
+    .then( split_file.bind(null,message_body.path,null,null,message_body.offset) )
     .then(function() {
       message.finalise();
       uploader = null;
