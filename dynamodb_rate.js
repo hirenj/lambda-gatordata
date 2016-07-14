@@ -33,10 +33,12 @@ const interval_uploader = function(uploader,data_table,queue) {
       resp.error.retryable = false;
       params.RequestItems[data_table].reverse().forEach((item) => queue.unshift(item));
     });
-    uploader.last_write = write_request.promise().catch(function(err) {
+    console.log("Setting last write promise");
+    let write_promise = write_request.promise().catch(function(err) {
       console.log("BatchWriteErr",err);
     }).then(function(result) {
-      if ( ! result.UnprocessedItems ) {
+      console.log(Object.keys(result.UnprocessedItems));
+      if ( ! result.UnprocessedItems || ! result.UnprocessedItems[data_table] ) {
         return;
       }
       console.log("Adding ",result.UnprocessedItems[data_table].length,"items back onto queue");
@@ -44,9 +46,26 @@ const interval_uploader = function(uploader,data_table,queue) {
         .map((dat) => ({'PutRequest': { 'Item' : dat.PutRequest.Item } }) )
         .reverse()
         .forEach((item) => queue.unshift(item));
+    }).then(function() {
+      console.log("Write finished");      
+    }).catch(function(err) {
+      console.log(err.stack);
+      console.log(err);
     });
+    if (uploader.last_write && uploader.last_write.resolved) {
+      console.log("Flattening chain");
+      delete uploader.last_write;
+    }
+    let writes_finished = (uploader.last_write || Promise.resolve(true))
+                          .then( () => write_promise )
+                          .then( () => writes_finished.resolved = true )
+    if (uploader.stopped) {
+      writes_finished.then( () => uploader.stopped.resolve() );
+    }
+    uploader.last_write = writes_finished;
   } else {
-    if (uploader.queue_ready && queue.length == 0) {      
+    if (uploader.queue_ready && queue.length == 0) {
+      console.log("Finishing uploader");
       uploader.finished.resolve();
     }
   }
@@ -92,7 +111,8 @@ class Uploader {
   }
   stop() {
     this.running = false;
-    return this.last_write;
+    this.stopped = new TriggeredPromise();
+    return this.stopped.promise;
   }
   maxTheoreticalCapacity() {
     return 15*1024;

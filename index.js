@@ -489,25 +489,39 @@ var runSplitQueue = function(event,context) {
       return Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 8*60*60*1000));
     }
     
-    let message = messages[1];
-
+    let message = messages[0];
+    console.log(message.Body);
+    let message_body = JSON.parse(message.Body);
     // Modify table, increasing write capacity if needed
 
-    return get_current_md5(message.path)
-    .then( split_file.bind(null,message.path,null) )
+    let result = get_current_md5(message_body.path)
+    .then( split_file.bind(null,message_body.path,null) )
     .then(function() {
       message.finalise();
+      console.log("Finished reading file, calling runSplitQueue immediately");
       Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 1*1000));
     });
     setTimeout(function() {
       // Wait for any requests to finalise
       // then look at the queue.
+      console.log("Ran out of time splitting file");
       uploader.stop().then(function() {
-        return queue.sendMessage({'path' : message.path, 'offset' : uploader.queue[0] });
+        console.log("First item on queue ",uploader.queue[0].PutRequest.Item );
+        return queue.sendMessage({'path' : message_body.path, 'offset' : uploader.queue[0].PutRequest.Item.acc });
+      }).catch(function(err) {
+        console.log(err.stack);
+        console.log(err);
       }).then(function() {
         message.finalise();
       });
-    },4.5*60*1000);
+    },20*1000);
+    return result;
+  }).then(function(ok) {
+    context.succeed('OK');
+  }).catch(function(err) {
+    console.log(err.stack);
+    console.log(err);
+    context.succeed('NOT-OK');
   });
   // Consume item from queue
   // Item should go back on queue if it is > 5 minutes old
