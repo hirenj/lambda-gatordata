@@ -85,7 +85,7 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
       }
     };
   }
-  console.log("Adding ",group_id," to set ",set_id);
+  console.log("Adding ",group_id," to set ",set_id," with meta ",meta.md5,meta.notmodified);
   return dynamo.update(params).promise();
 };
 
@@ -515,7 +515,7 @@ var runSplitQueue = function(event,context) {
         uploader = null;
         return message.finalise();
       });
-    },20*1000);
+    },(60*5 - 30)*1000);
 
     let result = get_current_md5(message_body.path)
     .then((md5) => split_file(message_body.path,null,md5,message_body.offset))

@@ -26,6 +26,7 @@ const interval_uploader = function(uploader,data_table,queue) {
     }
   }
   let last_batch_size = queue_size(params.RequestItems[data_table]);
+  let item_count = params.RequestItems[data_table].length;
   if (params.RequestItems[data_table].length > 0 ) {
     console.log("Uploading",last_batch_size,"worth of data for",params.RequestItems[data_table].length,"entries");
     var write_request = dynamo.batchWrite(params);
@@ -36,7 +37,7 @@ const interval_uploader = function(uploader,data_table,queue) {
     let write_promise = write_request.promise().catch(function(err) {
       console.log("BatchWriteErr",err);
     }).then(function(result) {
-      if ( ! result.UnprocessedItems || ! result.UnprocessedItems[data_table] ) {
+      if ( ! result || ! result.UnprocessedItems || ! result.UnprocessedItems[data_table] ) {
         return;
       }
       console.log("Adding ",result.UnprocessedItems[data_table].length,"items back onto queue");
@@ -67,8 +68,9 @@ const interval_uploader = function(uploader,data_table,queue) {
     }
   }
   if (uploader.running) {
-    let timeout =  Math.floor(1000 * last_batch_size / uploader.maxTheoreticalCapacity());
-    setTimeout(interval_uploader.bind(null,uploader,data_table,queue),1000);
+    let timeout =  Math.floor(1000 * (item_count*1024*Math.ceil((last_batch_size / item_count) / 1024 )) / uploader.maxTheoreticalCapacity());
+    console.log("Working out rate, we think it should be ",timeout);
+    setTimeout(interval_uploader.bind(null,uploader,data_table,queue),timeout);
   }
 };
 
