@@ -40,7 +40,7 @@ var get_current_md5 = function get_current_md5(filekey) {
     }
   };
   return dynamo.query(params_metadata).promise().then(function(data) {
-    return data.Items & data.Items.length > 0 ? data.Items[0].md5 : null;
+    return (data.Items && data.Items.length > 0) ? data.Items[0].md5 : null;
   });
 };
 
@@ -300,6 +300,7 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
     });
   }).catch(function(err) {
     if (err.statusCode == 304) {
+      console.log("File not modified, skipping splitting");
       return upload_metadata_dynamodb(dataset_id,group_id,{'notmodified' : true});
     }
   });
@@ -479,6 +480,8 @@ var combine_sets = function(entries) {
 var runSplitQueue = function(event,context) {
   console.log("Getting queue object");
   let queue = new Queue(split_queue);
+  let timelimit = null;
+  uploader = null;
 
   // We should do a pre-emptive subscribe for the event here
   console.log("Setting timeout for event");
@@ -487,7 +490,7 @@ var runSplitQueue = function(event,context) {
     return Events.subscribe('runSplitQueue',context.invokedFunctionArn,{});
   });
   return self_event.then(() => queue.shift(1)).then(function(messages) {
-    console.log("Got queue messages ",messages);
+    console.log("Got queue messages ",messages.map((message) => message.Body));
     if ( ! messages || ! messages.length ) {
       // Modify table, reducing write capacity
       console.log("Disabling runSplitQueue for 8 hours");
@@ -495,37 +498,40 @@ var runSplitQueue = function(event,context) {
     }
     
     let message = messages[0];
-    console.log(message.Body);
     let message_body = JSON.parse(message.Body);
     // Modify table, increasing write capacity if needed
 
-    let result = get_current_md5(message_body.path)
-    .then( split_file.bind(null,message_body.path,null,null,message_body.offset) )
-    .then(function() {
-      message.finalise();
-      uploader = null;
-      console.log("Finished reading file, calling runSplitQueue immediately");
-      Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 1*1000));
-    });
-    setTimeout(function() {
+    timelimit = setTimeout(function() {
       // Wait for any requests to finalise
       // then look at the queue.
       console.log("Ran out of time splitting file");
       uploader.stop().then(function() {
-        console.log("First item on queue ",uploader.queue[0].PutRequest.Item );
+        console.log("First item on queue ",uploader.queue[0].PutRequest.Item.acc );
         return queue.sendMessage({'path' : message_body.path, 'offset' : uploader.queue[0].PutRequest.Item.acc });
       }).catch(function(err) {
         console.log(err.stack);
         console.log(err);
       }).then(function() {
         uploader = null;
-        message.finalise();
+        return message.finalise();
       });
     },20*1000);
+
+    let result = get_current_md5(message_body.path)
+    .then((md5) => split_file(message_body.path,null,md5,message_body.offset))
+    .then(function() {
+      uploader = null;
+      clearTimeout(timelimit);
+      console.log("Finished reading file, calling runSplitQueue immediately, will run again at ",new Date(new Date().getTime() + 1*1000));
+      return message.finalise().then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 1*1000)));
+    });
     return result;
   }).then(function(ok) {
+    clearTimeout(timelimit);
     context.succeed('OK');
   }).catch(function(err) {
+    clearTimeout(timelimit);
+    uploader = null;
     console.log(err.stack);
     console.log(err);
     context.succeed('NOT-OK');

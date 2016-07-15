@@ -33,11 +33,9 @@ const interval_uploader = function(uploader,data_table,queue) {
       resp.error.retryable = false;
       params.RequestItems[data_table].reverse().forEach((item) => queue.unshift(item));
     });
-    console.log("Setting last write promise");
     let write_promise = write_request.promise().catch(function(err) {
       console.log("BatchWriteErr",err);
     }).then(function(result) {
-      console.log(Object.keys(result.UnprocessedItems));
       if ( ! result.UnprocessedItems || ! result.UnprocessedItems[data_table] ) {
         return;
       }
@@ -53,7 +51,6 @@ const interval_uploader = function(uploader,data_table,queue) {
       console.log(err);
     });
     if (uploader.last_write && uploader.last_write.resolved) {
-      console.log("Flattening chain");
       delete uploader.last_write;
     }
     let writes_finished = (uploader.last_write || Promise.resolve(true))
