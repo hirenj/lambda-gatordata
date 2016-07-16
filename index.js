@@ -670,10 +670,11 @@ var splitFile = function splitFile(event,context) {
   }
   if (event.Records[0].eventName.match(/ObjectCreated/)) {
     console.log("Splitting data at ",filekey);
-    result_promise = get_current_md5(filekey).then( split_file.bind(null,filekey,null) );
+    let queue = new Queue(split_queue);
+    result_promise = queue.sendMessage({'path' : filekey });
   }
   result_promise.then(function(done) {
-    console.log("Uploaded all components");
+    console.log("Processed all components");
     context.succeed('OK');
     // Upload the metadata at the end of a successful decomposition
   }).catch(function(err) {
