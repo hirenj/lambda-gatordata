@@ -521,6 +521,7 @@ let shutdown_split_queue = function() {
       throw err;
     }
   }).then(function() {
+    console.log("Clearing event rule");
     return Events.setTimeout('runSplitQueue',new Date(new Date().getTime() - 60*1000));
   });
 };
@@ -571,8 +572,7 @@ var runSplitQueue = function(event,context) {
     if ( ! messages || ! messages.length ) {
       // Modify table, reducing write capacity
       console.log("No more messages. Reducing capacity");
-      shutdown_split_queue();
-      return;
+      return shutdown_split_queue();
     }
     
     let message = messages[0];
