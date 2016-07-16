@@ -105,6 +105,7 @@ let uploader = null;
 var upload_data_record_db = function upload_data_record_db(key,data) {
   if ( ! uploader ) {
     uploader = require('./dynamodb_rate').createUploader(data_table);
+    uploader.capacity = MAX_WRITE_CAPACITY;
     uploader.start();
   }
 

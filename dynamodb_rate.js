@@ -113,8 +113,11 @@ class Uploader {
     this.stopped = new TriggeredPromise();
     return this.stopped.promise;
   }
+  set capacity(capacity) {
+    this._theoretical = capacity;
+  }
   maxTheoreticalCapacity() {
-    return 15*1024;
+    return (this._theoretical || 1)*1024;
   }
   setQueueReady() {
     this.queue_ready = true;
