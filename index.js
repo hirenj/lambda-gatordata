@@ -520,6 +520,8 @@ let shutdown_split_queue = function() {
     if (err.code !== 'ValidationException') {
       throw err;
     }
+  }).then(function() {
+    return Events.setTimeout('runSplitQueue',new Date(new Date().getTime() - 60*1000));
   });
 };
 
