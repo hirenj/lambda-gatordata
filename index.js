@@ -12,6 +12,9 @@ const zlib = require('zlib');
 const Queue = require('lambda-helpers').queue;
 const Events = require('lambda-helpers').events;
 
+const MIN_WRITE_CAPACITY = 10;
+const MAX_WRITE_CAPACITY = 10;
+
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
 var data_table = 'data';
@@ -467,6 +470,60 @@ var combine_sets = function(entries) {
   return results;
 };
 
+let set_write_capacity = function(capacity) {
+  var params = {
+    TableName: data_table,
+    ProvisionedThroughput: {
+      ReadCapacityUnits: 1,
+      WriteCapacityUnits: capacity
+    }
+  };
+  let dynamo_client = new AWS.DynamoDB();
+  return dynamo_client.updateTable(params).promise();
+};
+
+
+let reset_split_queue = function(queue,arn) {
+  return queue.getActiveMessages().then(function(counts) {
+    if (counts[0] > 0) {
+      throw new Error("Already running");
+    }
+    if (counts[1] < 1) {
+      throw new Error("No messages");
+    }
+  })
+  .then( () => console.log("Increasing capacity to ",MAX_WRITE_CAPACITY))
+  .then( () => set_write_capacity(MAX_WRITE_CAPACITY))
+  .catch(function(err) {
+    if (err.message == 'No messages') {
+      return shutdown_split_queue().then(function() {
+        throw err;
+      });
+    }
+    if (err.code !== 'ValidationException') {
+      throw err;
+    }
+  })
+  .then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 60*1000)) )
+  .then(function(newrule) {
+      console.log("Making sure function is subscribed to event");
+      return Events.subscribe('runSplitQueue',arn,{ 'time' : 'triggered' });
+  }).catch(function(err) {
+    console.log(err);
+  });
+};
+
+let shutdown_split_queue = function() {
+  console.log("Reducing capacity down to ",MIN_WRITE_CAPACITY);
+  return set_write_capacity(MIN_WRITE_CAPACITY)
+  .catch(function(err) {
+    if (err.code !== 'ValidationException') {
+      throw err;
+    }
+  });
+};
+
+
 // Timings for runQueue
 
 // Run runQueue every 8 hours
@@ -478,23 +535,42 @@ var combine_sets = function(entries) {
 //   - Discard item from the queue (unless there's an error, so put it back)
 
 var runSplitQueue = function(event,context) {
-  console.log("Getting queue object");
+
   let queue = new Queue(split_queue);
+
+  if (! event.time ) {
+    console.log("Initialising scheduler");
+    Events.setInterval('scheduleSplitQueue','8 hours').then(function(newrule) {
+      if (newrule) {
+        return Events.subscribe('scheduleSplitQueue',context.invokedFunctionArn,{ 'time' : 'scheduled' });
+      }
+    }).then(function() {
+      context.succeed('OK');
+    });
+    return;
+  }
+
+  if (event.time && event.time == 'scheduled') {
+    reset_split_queue(queue,context.invokedFunctionArn).then(function() {
+      context.succeed('OK');
+    });
+    return;
+  }
+
+  console.log("Getting queue object");
   let timelimit = null;
   uploader = null;
 
   // We should do a pre-emptive subscribe for the event here
   console.log("Setting timeout for event");
-  let self_event = Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 5*60*1000)).then(function() {;
-    console.log("Making sure function is subscribed to event");
-    return Events.subscribe('runSplitQueue',context.invokedFunctionArn,{});
-  });
+  let self_event = Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 5*60*1000));
   return self_event.then(() => queue.shift(1)).then(function(messages) {
     console.log("Got queue messages ",messages.map((message) => message.Body));
     if ( ! messages || ! messages.length ) {
       // Modify table, reducing write capacity
-      console.log("Disabling runSplitQueue for 8 hours");
-      return Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 8*60*60*1000));
+      console.log("No more messages. Reducing capacity");
+      shutdown_split_queue();
+      return;
     }
     
     let message = messages[0];
@@ -522,8 +598,8 @@ var runSplitQueue = function(event,context) {
     .then(function() {
       uploader = null;
       clearTimeout(timelimit);
-      console.log("Finished reading file, calling runSplitQueue immediately, will run again at ",new Date(new Date().getTime() + 1*1000));
-      return message.finalise().then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 1*1000)));
+      console.log("Finished reading file, calling runSplitQueue immediately, will run again at ",new Date(new Date().getTime() + 60*1000));
+      return message.finalise().then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 60*1000)));
     });
     return result;
   }).then(function(ok) {
@@ -536,10 +612,6 @@ var runSplitQueue = function(event,context) {
     console.log(err);
     context.succeed('NOT-OK');
   });
-  // Consume item from queue
-  // Item should go back on queue if it is > 5 minutes old
-  // offset to start of queue
-  // s3 path
 };
 
 var enQueue = function(event) {
