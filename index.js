@@ -12,8 +12,8 @@ const zlib = require('zlib');
 const Queue = require('lambda-helpers').queue;
 const Events = require('lambda-helpers').events;
 
-const MIN_WRITE_CAPACITY = 10;
-const MAX_WRITE_CAPACITY = 10;
+const MIN_WRITE_CAPACITY = 1;
+const MAX_WRITE_CAPACITY = 200;
 
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
