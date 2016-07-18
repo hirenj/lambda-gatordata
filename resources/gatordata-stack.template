@@ -98,7 +98,7 @@
     "LambdaSplitFilesRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
-        "ManagedPolicyArns" : [ { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }],
+        "ManagedPolicyArns" : [ {"Ref" : "WriteSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
