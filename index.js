@@ -109,6 +109,8 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
     uploader.start();
   }
 
+  data.pipe(uploader.queue);
+
   var key_elements = key ? key.split('/') : [];
   var set_ids = (key_elements[2] || '').split(':');
   var group_id = set_ids[0];
@@ -270,7 +272,9 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
   var accessions = [];
   console.log(group_id,dataset_id,md5_result);
 
-  rs.pipe(JSONStream.parse(['data', {'emitKey': true}])).on('data',function(dat) {
+  rs.pipe(JSONStream.parse(['data', {'emitKey': true}]))
+
+  .on('data',function(dat) {
     // Output data should end up looking like this:
     // {  'data': dat.value,
     //    'retrieved' : "ISO timestamp",
@@ -575,7 +579,7 @@ var runSplitQueue = function(event,context) {
       console.log("No more messages. Reducing capacity");
       return shutdown_split_queue();
     }
-    
+
     let message = messages[0];
     let message_body = JSON.parse(message.Body);
     // Modify table, increasing write capacity if needed
