@@ -97,15 +97,19 @@ const interval_uploader = function(uploader,data_table,queue) {
   console.log("Upload queue length is ",queue.length);
 
   let result = [];
-  let val = uploader.queue.read();
-  if (! val && ! uploader.queue.readable ) {
-    val = [].concat(uploader.queue.queue);
-    uploader.queue.queue.length = 0;
+  if (queue.length == 0) {
+    let val = uploader.data.read();
+    if (! val && ! uploader.data.readable ) {
+      val = [].concat(uploader.data.queue);
+      uploader.data.queue.length = 0;
+    }
+    if (val) {
+      val.forEach(function(value) {
+        queue.push(value);
+      });
+    }
   }
-  if (val) {
-    count += val.length;
-  }
-  if (val && val.length == 0 && ! uploader.queue.readable) {
+  if (val && val.length == 0 && ! uploader.data.readable) {
     clearInterval(interval);
   }
 
@@ -222,6 +226,7 @@ exports.createUploadPipe = function(table,setid,groupid) {
   let inpipe = (new JSONtoDynamodb(setid,offset)).pipe(new JSONGrouper(25));
 
   let uploader = new Uploader(table);
-  uploader.queue = inpipe;
+  uploader.data = inpipe;
+  return uploader;
 };
 exports.createUploader = function(table) { return new Uploader(table); };

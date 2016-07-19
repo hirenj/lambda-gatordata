@@ -103,50 +103,26 @@ let uploader = null;
 // in memory.. filter?
 
 var upload_data_record_db = function upload_data_record_db(key,data) {
-  if ( ! uploader ) {
-    uploader = require('./dynamodb_rate').createUploader(data_table);
-    uploader.capacity = MAX_WRITE_CAPACITY;
-    uploader.start();
-  }
 
-  data.pipe(uploader.queue);
+  if ( ! key ) {
+    return uploader.finished.promise;
+  }
 
   var key_elements = key ? key.split('/') : [];
   var set_ids = (key_elements[2] || '').split(':');
   var group_id = set_ids[0];
   var set_id = set_ids[1];
-  var accession = key_elements[3];
-  if (key) {
-    if ( accession && set_id && data.data ) {
-      data.data.forEach(function(obj) {
-        if (obj.spectra) {
-          delete obj.spectra;
-        }
-        if (obj.interpro) {
-          delete obj.interpro;
-        }
-      });
-      var block = {
-              'acc' : accession,
-              'dataset' : set_id
-      };
-      block.data = zlib.deflateSync(new Buffer(JSON.stringify(data.data),'utf8')).toString('binary');
-      uploader.queue.push({
-        'PutRequest' : {
-          'Item' : block
-        }
-      });
 
-    }
+  if ( ! uploader ) {
+    uploader = require('./dynamodb_rate').createUploadPipe(data_table,set_id,group_id);
+    uploader.capacity = MAX_WRITE_CAPACITY;
+    data.pipe(uploader.data);
+    uploader.start();
   }
-  if ( ! key ) {
-    uploader.setQueueReady();
-    return uploader.finished.promise.then(function() {
-      uploader = null;
-    });
-  } else {
-    return Promise.resolve(true);
-  }
+
+  return uploader.finished.promise.then(function() {
+    uploader = null;
+  });
 };
 
 var upload_data_record_s3 = function upload_data_record_s3(key,data) {
