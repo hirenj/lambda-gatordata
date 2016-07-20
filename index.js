@@ -12,6 +12,8 @@ const zlib = require('zlib');
 const Queue = require('lambda-helpers').queue;
 const Events = require('lambda-helpers').events;
 
+const MetadataExtractor = require('./dynamodb_rate').MetadataExtractor;
+
 const MIN_WRITE_CAPACITY = 1;
 const MAX_WRITE_CAPACITY = 200;
 
@@ -249,15 +251,15 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
   console.log("Performing an upload for ",group_id,dataset_id,md5_result);
 
   let entry_data = rs.pipe(JSONStream.parse(['data', {'emitKey': true}]));
-
   upload_promises.push( upload_data_record("data/latest/"+group_id+":"+dataset_id, entry_data,offset) );
 
-  rs.pipe(JSONStream.parse(['metadata'])).on('data',function(dat) {
+  rs.pipe(new MetadataExtractor()).on('data',function(dat) {
     let metadata_uploaded = Promise.all([].concat(upload_promises)).then(function() {
       return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'md5' : md5_result.md5 });
     });
     upload_promises.push(metadata_uploaded);
   });
+
   return new Promise(function(resolve,reject) {
     rs.on('end',function() {
       resolve(Promise.all(upload_promises));
@@ -523,7 +525,7 @@ var runSplitQueue = function(event,context) {
 
   // We should do a pre-emptive subscribe for the event here
   console.log("Setting timeout for event");
-  let self_event = Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 5*60*1000));
+  let self_event = Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 6*60*1000));
   return self_event.then(() => queue.shift(1)).then(function(messages) {
     console.log("Got queue messages ",messages.map((message) => message.Body));
     if ( ! messages || ! messages.length ) {
@@ -541,8 +543,14 @@ var runSplitQueue = function(event,context) {
       // then look at the queue.
       console.log("Ran out of time splitting file");
       uploader.stop().then(function() {
-        console.log("First item on queue ",uploader.queue[0].PutRequest.Item.acc );
-        return queue.sendMessage({'path' : message_body.path, 'offset' : uploader.queue[0].PutRequest.Item.acc });
+        let last_item = uploader.queue[0];
+        if (! last_item ) {
+          last_item = uploader.last_acc;
+        } else {
+          last_item = last_item.PutRequest.Item.acc;
+        }
+        console.log("First item on queue ",last_item );
+        return queue.sendMessage({'path' : message_body.path, 'offset' : last_item });
       }).catch(function(err) {
         console.log(err.stack);
         console.log(err);
@@ -550,7 +558,7 @@ var runSplitQueue = function(event,context) {
         uploader = null;
         return message.finalise();
       });
-    },(60*5 - 30)*1000);
+    },(60*5 - 10)*1000);
 
     let result = get_current_md5(message_body.path)
     .then((md5) => split_file(message_body.path,null,md5,message_body.offset))

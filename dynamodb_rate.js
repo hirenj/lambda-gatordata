@@ -35,6 +35,48 @@ JSONGrouper.prototype._transform = function _transform(obj, encoding, callback) 
 
 };
 
+function MetadataExtractor(options) {
+  if ( ! (this instanceof MetadataExtractor))
+    return new MetadataExtractor(options);
+
+  if (! options) options = {};
+  options.objectMode = true;
+  let self = this;
+  let Parser = require('JSONStream/node_modules/jsonparse');
+  let p = new Parser();
+
+  this.parser = p;
+
+  p.push = function(){
+    if (this.stack && this.stack[1] && this.stack[1].key == 'data') {
+      this.value = null;
+    }
+    this.stack.push({value: this.value, key: this.key, mode: this.mode});
+  };
+
+  p.onValue = function(val) {
+    if (! val) {
+      return;
+    }
+    if (val.metadata) {
+      self.metadata = val.metadata;
+      self.push(val.metadata);
+    }
+  };
+
+  Transform.call(this, options);
+}
+
+inherits(MetadataExtractor, Transform);
+
+// {"path":"uploads/glycodomain/public","offset":"h3bs64"}
+
+MetadataExtractor.prototype._transform = function _transform(obj, encoding, callback) {
+  this.parser.write(obj);
+  callback();
+};
+
+
 function JSONtoDynamodb(set_id,offset,options) {
   if ( ! (this instanceof JSONtoDynamodb))
     return new JSONtoDynamodb(set_id,offset,options);
@@ -50,7 +92,7 @@ inherits(JSONtoDynamodb, Transform);
 
 JSONtoDynamodb.prototype._transform = function(obj,encoding,callback) {
   if (this.offset && obj.key.toLowerCase() === this.offset) {
-    console.log("Using offset to start at ",offset);
+    console.log("Using offset to start at ",this.offset);
     delete this.offset;
   }
 
@@ -99,15 +141,16 @@ const interval_uploader = function(uploader,data_table,queue) {
 
   let result = [];
   if (queue.length == 0) {
-    console.log("Trying to read from queue");
     let val = uploader.outdata.read();
     if (! val && ! uploader.outdata.readable ) {
       val = [].concat(uploader.outdata.queue);
       uploader.outdata.queue.length = 0;
     }
     if (val) {
+      uploader.total = (uploader.total || 0 ) + val.length;
       val.forEach(function(value) {
         queue.push(value);
+        uploader.last_acc = value.PutRequest.Item.acc;
       });
     }
     if (val && val.length == 0 && ! uploader.data.readable) {
@@ -150,7 +193,7 @@ const interval_uploader = function(uploader,data_table,queue) {
         .reverse()
         .forEach((item) => queue.unshift(item));
     }).then(function() {
-      console.log("Write finished");
+      console.log("Wrote ",uploader.total - queue.length," entries so far");
     }).catch(function(err) {
       console.log(err.stack);
       console.log(err);
@@ -227,6 +270,9 @@ class Uploader {
     this.queue_ready = true;
   }
 }
+
+exports.MetadataExtractor = MetadataExtractor;
+
 exports.createUploadPipe = function(table,setid,groupid,offset) {
   let inpipe = new JSONtoDynamodb(setid,offset);
   let uploader = new Uploader(table);
