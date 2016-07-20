@@ -94,7 +94,7 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
 
 var upload_metadata_dynamodb = function(set,group,meta) {
   return upload_metadata_dynamodb_from_db(set,group,meta);
-}
+};
 
 let uploader = null;
 
@@ -102,7 +102,7 @@ let uploader = null;
 // we don't end up keeping all the elements
 // in memory.. filter?
 
-var upload_data_record_db = function upload_data_record_db(key,data) {
+var upload_data_record_db = function upload_data_record_db(key,data,offset) {
 
   if ( ! key ) {
     return uploader.finished.promise;
@@ -114,7 +114,8 @@ var upload_data_record_db = function upload_data_record_db(key,data) {
   var set_id = set_ids[1];
 
   if ( ! uploader ) {
-    uploader = require('./dynamodb_rate').createUploadPipe(data_table,set_id,group_id);
+    console.log("Starting uploader");
+    uploader = require('./dynamodb_rate').createUploadPipe(data_table,set_id,group_id,offset);
     uploader.capacity = MAX_WRITE_CAPACITY;
     data.pipe(uploader.data);
     uploader.start();
@@ -141,8 +142,8 @@ var upload_data_record_s3 = function upload_data_record_s3(key,data) {
   return s3.upload(params, options).promise();
 };
 
-var upload_data_record = function upload_data_record(key,data) {
-  return upload_data_record_db(key,data);
+var upload_data_record = function upload_data_record(key,data,offset) {
+  return upload_data_record_db(key,data,offset);
 };
 
 var retrieve_file_s3 = function retrieve_file_s3(filekey,md5_result) {
@@ -157,15 +158,15 @@ var retrieve_file_s3 = function retrieve_file_s3(filekey,md5_result) {
     md5_result.md5 = request.response.data.ETag;
   });
   return stream;
-}
+};
 
 var retrieve_file_local = function retrieve_file_local(filekey) {
   return fs.createReadStream(filekey);
-}
+};
 
 var retrieve_file = function retrieve_file(filekey,md5_result) {
   return retrieve_file_s3(filekey,md5_result);
-}
+};
 
 var remove_folder = function remove_folder(setkey) {
   return remove_folder_db(setkey);
@@ -214,7 +215,7 @@ var remove_folder_s3 = function remove_folder_s3(setkey) {
     }
     return true;
   });
-}
+};
 
 var remove_data = function remove_data(filekey) {
   var filekey_components = filekey.split('/');
@@ -245,35 +246,17 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
   var rs = retrieve_file(filekey,md5_result);
   var upload_promises = [];
 
-  var accessions = [];
-  console.log(group_id,dataset_id,md5_result);
+  console.log("Performing an upload for ",group_id,dataset_id,md5_result);
 
-  rs.pipe(JSONStream.parse(['data', {'emitKey': true}]))
+  let entry_data = rs.pipe(JSONStream.parse(['data', {'emitKey': true}]));
 
-  .on('data',function(dat) {
-    // Output data should end up looking like this:
-    // {  'data': dat.value,
-    //    'retrieved' : "ISO timestamp",
-    //    'title' : "Title" }
+  upload_promises.push( upload_data_record("data/latest/"+group_id+":"+dataset_id, entry_data,offset) );
 
-    var datablock = {'data': dat.value };
-    if (offset && dat.key.toLowerCase() === offset) {
-      console.log("Using offset to start at ",offset);
-      offset = null;
-    }
-    if (offset) {
-      return;
-    }
-    accessions.push(dat.key.toLowerCase());
-    upload_promises.push(upload_data_record("data/latest/"+group_id+":"+dataset_id+"/"+dat.key.toLowerCase(), datablock));
-  });
-
-  //FIXME - upload metadata as the last part of the upload, marker of done.
-  //        should be part of api request
   rs.pipe(JSONStream.parse(['metadata'])).on('data',function(dat) {
-    upload_promises.push( upload_data_record(null,null).then(function() {
-      return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'md5' : md5_result.md5, 'accessions' : accessions});
-    }));
+    let metadata_uploaded = Promise.all([].concat(upload_promises)).then(function() {
+      return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'md5' : md5_result.md5 });
+    });
+    upload_promises.push(metadata_uploaded);
   });
   return new Promise(function(resolve,reject) {
     rs.on('end',function() {
@@ -284,19 +267,11 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
     });
   }).catch(function(err) {
     if (err.statusCode == 304) {
+      entry_data.end();
       console.log("File not modified, skipping splitting");
       return upload_metadata_dynamodb(dataset_id,group_id,{'notmodified' : true});
     }
   });
-};
-
-var base64urlDecode = function(str) {
-  return new Buffer(base64urlUnescape(str), 'base64').toString();
-};
-
-var base64urlUnescape = function(str) {
-  str += new Array(5 - str.length % 4).join('=');
-  return str.replace(/\-/g, '+').replace(/_/g, '/');
 };
 
 var datasets_containing_acc = function(acc) {
@@ -321,9 +296,9 @@ var inflate_item = function(item) {
       }
       zlib.inflate(new Buffer(item.data,'binary'),function(err,result) {
         if (err) {
-          reject(err); 
+          reject(err);
           console.log(err);
-          return;         
+          return;
         }
         item.data = JSON.parse(result.toString('utf8'));
         resolve(item);
@@ -368,19 +343,20 @@ var filter_db_datasets = function(grants,data) {
     }
     return data.acc == 'metadata';
   }).forEach(function(set) {
-    sets = sets.concat(set.group_ids.values.map(function(group) { return { group_id: group, id: set.dataset }}));
+    sets = sets.concat(set.group_ids.values.map(function(group) { return { group_id: group, id: set.dataset }; }));
   });
   var valid_sets = [];
   // Filter metadata by the JWT permissions
   sets.forEach(function(set) {
+    let valid_prots = null;
     if (grants[set.group_id+'/'+set.id]) {
-      var valid_prots = grants[set.group_id+'/'+set.id];
+      valid_prots = grants[set.group_id+'/'+set.id];
       if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
         valid_sets.push(set.id);
       }
     }
     if (grants[set.group_id+'/*']) {
-      var valid_prots = grants[set.group_id+'/*'];
+      valid_prots = grants[set.group_id+'/*'];
       if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
         valid_sets.push(set.id);
       }
@@ -412,17 +388,17 @@ var download_all_data_s3 = function(accession,grants) {
     console.log(sets);
     var valid_sets = [];
     sets.forEach(function(set) {
-
+      let valid_prots = null;
       // Filter metadata by the JWT permissions
 
       if (grants[set.group_id+'/'+set.id]) {
-        var valid_prots = grants[set.group_id+'/'+set.id];
+        valid_prots = grants[set.group_id+'/'+set.id];
         if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
           valid_sets.push(set.group_id+':'+set.id);
         }
       }
       if (grants[set.group_id+'/*']) {
-        var valid_prots = grants[set.group_id+'/*'];
+        valid_prots = grants[set.group_id+'/*'];
         if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
           valid_sets.push(set.group_id+':'+set.id);
         }
@@ -447,7 +423,7 @@ var download_all_data = function(accession,grants) {
 
 var combine_sets = function(entries) {
   var results = {"data" : []};
-  results.data = entries.map(function(entry) { return entry });
+  results.data = entries.map(function(entry) { return entry; });
   return results;
 };
 
@@ -597,10 +573,6 @@ var runSplitQueue = function(event,context) {
   });
 };
 
-var enQueue = function(event) {
-  // Push the S3 object onto the queue with a null start
-};
-
 /*
 Test event
 {
@@ -624,7 +596,6 @@ var readAllData = function readAllData(event,context) {
 
   // Decode JWT
   // Get groups/datasets that can be read
-  // grants = JSON.parse(base64urlDecode(token[1].split('.')[1])).access;
   let start_time = null;
 
   download_all_data(accession,grants).then(function(entries) {
@@ -650,8 +621,13 @@ var splitFile = function splitFile(event,context) {
   }
   if (event.Records[0].eventName.match(/ObjectCreated/)) {
     console.log("Splitting data at ",filekey);
-    let queue = new Queue(split_queue);
-    result_promise = queue.sendMessage({'path' : filekey });
+    // let queue = new Queue(split_queue);
+    // result_promise = queue.sendMessage({'path' : filekey });
+    result_promise = get_current_md5(filekey)
+    .then((md5) => split_file(filekey,null,md5))
+    .then(function() {
+      uploader = null;
+    });
   }
   result_promise.then(function(done) {
     console.log("Processed all components");

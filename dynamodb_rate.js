@@ -12,7 +12,7 @@ const inherits = require('util').inherits;
 
 function JSONGrouper(size,options) {
   if ( ! (this instanceof JSONGrouper))
-    return new JSONGrouper(options);
+    return new JSONGrouper(size,options);
 
   if (! options) options = {};
   options.objectMode = true;
@@ -26,7 +26,6 @@ inherits(JSONGrouper, Transform);
 JSONGrouper.prototype._transform = function _transform(obj, encoding, callback) {
 
   this.queue.push(obj);
-
   if (this.queue.length >= this.size) {
     this.push([].concat(this.queue));
     this.queue.length = 0;
@@ -36,9 +35,9 @@ JSONGrouper.prototype._transform = function _transform(obj, encoding, callback) 
 
 };
 
-function JSONtoDynamodb(set_id,offset) {
+function JSONtoDynamodb(set_id,offset,options) {
   if ( ! (this instanceof JSONtoDynamodb))
-    return new JSONtoDynamodb(options);
+    return new JSONtoDynamodb(set_id,offset,options);
 
   if (! options) options = {};
   options.objectMode = true;
@@ -50,7 +49,6 @@ function JSONtoDynamodb(set_id,offset) {
 inherits(JSONtoDynamodb, Transform);
 
 JSONtoDynamodb.prototype._transform = function(obj,encoding,callback) {
-
   if (this.offset && obj.key.toLowerCase() === this.offset) {
     console.log("Using offset to start at ",offset);
     delete this.offset;
@@ -60,7 +58,6 @@ JSONtoDynamodb.prototype._transform = function(obj,encoding,callback) {
     callback();
     return;
   }
-
   let data = {'data': obj.value, 'acc' : obj.key.toLowerCase() };
 
   data.data.forEach(function(dat) {
@@ -85,6 +82,8 @@ JSONtoDynamodb.prototype._transform = function(obj,encoding,callback) {
     }
   });
 
+  callback();
+
 };
 
 
@@ -94,23 +93,29 @@ const queue_size = function queue_size(queue) {
 
 const interval_uploader = function(uploader,data_table,queue) {
   var params = { 'RequestItems' : {} };
-  console.log("Upload queue length is ",queue.length);
+  if (queue.length > 0) {
+    console.log("Upload queue length is ",queue.length);
+  }
 
   let result = [];
   if (queue.length == 0) {
-    let val = uploader.data.read();
-    if (! val && ! uploader.data.readable ) {
-      val = [].concat(uploader.data.queue);
-      uploader.data.queue.length = 0;
+    console.log("Trying to read from queue");
+    let val = uploader.outdata.read();
+    if (! val && ! uploader.outdata.readable ) {
+      val = [].concat(uploader.outdata.queue);
+      uploader.outdata.queue.length = 0;
     }
     if (val) {
       val.forEach(function(value) {
         queue.push(value);
       });
     }
-  }
-  if (val && val.length == 0 && ! uploader.data.readable) {
-    clearInterval(interval);
+    if (val && val.length == 0 && ! uploader.data.readable) {
+      if (queue.length == 0) {
+        console.log("Finishing uploader");
+        uploader.finished.resolve();
+      }
+    }
   }
 
   params.RequestItems[data_table] = [];
@@ -160,15 +165,15 @@ const interval_uploader = function(uploader,data_table,queue) {
       writes_finished.then( () => uploader.stopped.resolve() );
     }
     uploader.last_write = writes_finished;
-  } else {
-    if (uploader.queue_ready && queue.length == 0) {
-      console.log("Finishing uploader");
-      uploader.finished.resolve();
-    }
   }
   if (uploader.running) {
     let timeout =  Math.floor(1000 * (item_count*1024*Math.ceil((last_batch_size / item_count) / 1024 )) / uploader.maxTheoreticalCapacity());
-    console.log("Working out rate, we think it should be ",timeout);
+    if (queue.length > 0) {
+      console.log("Working out rate, we think it should be ",timeout);
+    }
+    if (isNaN(timeout)) {
+      timeout = 1000;
+    }
     setTimeout(interval_uploader.bind(null,uploader,data_table,queue),timeout);
   }
 };
@@ -222,11 +227,11 @@ class Uploader {
     this.queue_ready = true;
   }
 }
-exports.createUploadPipe = function(table,setid,groupid) {
-  let inpipe = (new JSONtoDynamodb(setid,offset)).pipe(new JSONGrouper(25));
-
+exports.createUploadPipe = function(table,setid,groupid,offset) {
+  let inpipe = new JSONtoDynamodb(setid,offset);
   let uploader = new Uploader(table);
   uploader.data = inpipe;
+  uploader.outdata = inpipe.pipe(new JSONGrouper(25));
   return uploader;
 };
 exports.createUploader = function(table) { return new Uploader(table); };
