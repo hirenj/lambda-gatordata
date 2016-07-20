@@ -451,8 +451,8 @@ let reset_split_queue = function(queue,arn) {
       throw new Error("No messages");
     }
   })
-  .then( () => console.log("Increasing capacity to ",MAX_WRITE_CAPACITY))
-  .then( () => set_write_capacity(MAX_WRITE_CAPACITY))
+  .then( () => console.log("Increasing capacity to ",Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
+  .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10)
   .catch(function(err) {
     if (err.message == 'No messages') {
       return shutdown_split_queue().then(function() {
@@ -629,13 +629,13 @@ var splitFile = function splitFile(event,context) {
   }
   if (event.Records[0].eventName.match(/ObjectCreated/)) {
     console.log("Splitting data at ",filekey);
-    // let queue = new Queue(split_queue);
-    // result_promise = queue.sendMessage({'path' : filekey });
-    result_promise = get_current_md5(filekey)
-    .then((md5) => split_file(filekey,null,md5))
-    .then(function() {
-      uploader = null;
-    });
+    let queue = new Queue(split_queue);
+    result_promise = queue.sendMessage({'path' : filekey });
+    // result_promise = get_current_md5(filekey)
+    // .then((md5) => split_file(filekey,null,md5))
+    // .then(function() {
+    //   uploader = null;
+    // });
   }
   result_promise.then(function(done) {
     console.log("Processed all components");
