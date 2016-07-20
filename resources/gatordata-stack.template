@@ -31,6 +31,13 @@
         }
       }
     },
+    "SplitQueue" : {
+      "Type": "AWS::SQS::Queue",
+      "Properties": {
+        "QueueName": { "Fn::Join" :  [ "-", [ { "Ref" : "AWS::StackName" }, "SplitQueue" ] ] },
+        "VisibilityTimeout": "300"
+      }
+    },
     "splitFiles" : {
       "Type" : "AWS::Lambda::Function",
       "Properties" : {
@@ -49,6 +56,25 @@
         "Timeout" : 300
       },
       "DependsOn" : "LambdaSplitFilesRole"
+    },
+    "runSplitQueue" : {
+      "Type" : "AWS::Lambda::Function",
+      "Properties" : {
+        "Code" : {
+          "ZipFile": { "Fn::Join": ["", [
+            "exports.runSplitQueue = function(event, context) {",
+            "  context.succeed('OK');",
+            "};"
+          ]]}
+        },
+        "Description" : "runSplitQueue",
+        "Handler" : "index.runSplitQueue",
+        "Role" : {"Fn::GetAtt" : ["LambdaRunSplitQueueRole", "Arn"] },
+        "Runtime" : "nodejs",
+        "MemorySize" : 128,
+        "Timeout" : 300
+      },
+      "DependsOn" : "LambdaRunSplitQueueRole"
     },
     "readAllData" : {
       "Type" : "AWS::Lambda::Function",
@@ -72,7 +98,7 @@
     "LambdaSplitFilesRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
-        "ManagedPolicyArns" : [ { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }],
+        "ManagedPolicyArns" : [ {"Ref" : "WriteSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
@@ -85,6 +111,48 @@
             }
           ]
         }
+      }
+    },
+    "LambdaRunSplitQueueRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "ManagedPolicyArns" : [ {"Ref" : "RegisterEvents"}, {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }, {"Ref" : "WriteSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      }
+    },
+    "LambdaRunSplitQueueInvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName" : { "Fn::GetAtt" : ["runSplitQueue", "Arn"] },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn" : {"Fn::Join": [":", [ "arn:aws:events", { "Ref" : "AWS::Region" } , {"Ref" : "AWS::AccountId" }, "rule/runSplitQueue"]] }
+      },
+      "Metadata" : {
+        "Comment" : "Queue runner for splitting files"
+      }
+    },
+    "LambdaRunSplitQueueInvokeScheduleSplitQueuePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName" : { "Fn::GetAtt" : ["runSplitQueue", "Arn"] },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn" : {"Fn::Join": [":", [ "arn:aws:events", { "Ref" : "AWS::Region" } , {"Ref" : "AWS::AccountId" }, "rule/scheduleSplitQueue"]] }
+      },
+      "Metadata" : {
+        "Comment" : "Scheduler for the runner to split files"
       }
     },
     "dataBucket": {
@@ -163,9 +231,9 @@
               }
             ]
         },
-        "Roles" : [ { "Ref" : "LambdaSplitFilesRole" }, {"Ref" : "LambdaReadAllDataRole"} ]
+        "Roles" : [ { "Ref" : "LambdaSplitFilesRole" }, {"Ref" : "LambdaReadAllDataRole"}, {"Ref" : "LambdaRunSplitQueueRole"} ]
       },
-      "DependsOn" : ["LambdaSplitFilesRole","LambdaReadAllDataRole"]
+      "DependsOn" : ["LambdaSplitFilesRole","LambdaReadAllDataRole","LambdaRunSplitQueueRole"]
     },
     "ReadUploaded": {
       "Type": "AWS::IAM::ManagedPolicy",
@@ -253,6 +321,78 @@
               "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "data" } ] ]}
             }
           ]
+        }
+      }
+    },
+    "ConsumeSplitQueue": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "ConsumeSplitQueue",
+        "PolicyDocument" : {
+            "Id" : "ConsumeSplitQueue",
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                  "Sid": "ConsumeSplitQueueSQS",
+                  "Effect": "Allow",
+                  "Action": [ "sqs:ReceiveMessage", "sqs:GetQueueUrl","sqs:ChangeMessageVisibility", "sqs:DeleteMessage", "sqs:GetQueueAttributes" ],
+                  "Resource" : { "Fn::GetAtt" : ["SplitQueue","Arn"]}
+                }
+            ]
+        }
+      },
+      "DependsOn": "SplitQueue"
+    },
+    "WriteSplitQueue": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "WriteSplitQueue",
+        "PolicyDocument" : {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                  "Sid": "WriteSplitQueue",
+                  "Effect": "Allow",
+                  "Action": "sqs:SendMessage",
+                  "Resource" : { "Fn::GetAtt" : ["SplitQueue","Arn"]}
+                }
+            ]
+        }
+      },
+      "DependsOn": "DownloadQueue"
+    },
+    "UpdateDataTableCapacity": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "Update capacity for writing to data table",
+        "PolicyDocument" : {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                  "dynamodb:UpdateTable"
+              ],
+              "Resource": { "Fn::Join" :  [ "", [ "arn:aws:dynamodb:", { "Ref" : "AWS::Region" }, ":", { "Ref" : "AWS::AccountId" } ,":table/", { "Ref" : "data" } ] ]}
+            }
+          ]
+        }
+      }
+    },
+    "RegisterEvents": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "RegisterEvents",
+        "PolicyDocument" : {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                  "Sid": "RegisterEvents",
+                  "Effect": "Allow",
+                  "Action": [ "events:PutRule", "events:ListRules", "events:PutTargets" ],
+                  "Resource" : "*"
+                }
+            ]
         }
       }
     }
