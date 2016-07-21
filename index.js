@@ -49,35 +49,44 @@ var get_current_md5 = function get_current_md5(filekey) {
   });
 };
 
-var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,meta) {
+var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,options) {
   return dynamo.put({'TableName' : metadata_table, 'Item' : {
-    'accessions' : meta.accessions,
+    'accessions' : options.accessions,
     'id' : set,
     'group_id' : group
   }}).promise();
 };
 
-var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,meta) {
-  if (meta.remove) {
+var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,options) {
+  if (options.remove) {
     // Don't need to remove the group id as it's already deleted
     return Promise.resolve(true);
   }
   var params;
-  if (meta.md5 && ! meta.notmodified) {
+  if (options.md5 && ! options.notmodified) {
+    let metadata = options.metadata || {};
+    metadata.mimetype = metadata.mimetype || 'application/json';
+    metadata.title = metadata.title || 'Untitled';
+    // This is new data being inserted into
+    // the database
     params = {
      'TableName' : data_table,
      'Key' : {'acc' : 'metadata', 'dataset' : set_id },
-     'UpdateExpression': 'SET #md5 = :md5 ADD #gids :group',
+     'UpdateExpression': 'SET #md5 = :md5 ADD #gids :group AND #metadata = :metadata',
       'ExpressionAttributeValues': {
           ':group': dynamo.createSet([ group_id ]),
-          ':md5'  : meta.md5
+          ':md5'  : options.md5,
+          ':metadata' : metadata
       },
       'ExpressionAttributeNames' : {
         '#gids' : 'group_ids',
-        '#md5' : 'md5'
+        '#md5' : 'md5',
+        '#metadata' : 'metadata'
       }
     };
   } else {
+    // We should only update the group membership for the
+    // file because we have the data inserted already
     params = {
      'TableName' : data_table,
      'Key' : {'acc' : 'metadata', 'dataset' : set_id },
@@ -90,7 +99,7 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
       }
     };
   }
-  console.log("Adding ",group_id," to set ",set_id," with meta ",meta.md5,meta.notmodified);
+  console.log("Adding ",group_id," to set ",set_id," with meta ",options.md5,options.notmodified);
   return dynamo.update(params).promise();
 };
 
@@ -339,12 +348,16 @@ var download_all_data_db = function(accession,grants) {
 var filter_db_datasets = function(grants,data) {
   var sets = [];
   var accession = null;
+
+  let metadatas = {};
+
   data.filter(function(data) {
     if (data.acc !== 'metadata') {
       accession = data.acc;
     }
     return data.acc == 'metadata';
   }).forEach(function(set) {
+    metadatas[set.dataset] = set.metadata;
     sets = sets.concat(set.group_ids.values.map(function(group) { return { group_id: group, id: set.dataset }; }));
   });
   var valid_sets = [];
@@ -365,6 +378,7 @@ var filter_db_datasets = function(grants,data) {
     }
   });
   return data.filter(function(dat) {
+    dat.metadata = metadatas[dat.dataset];
     return dat.acc !== 'metadata' && valid_sets.indexOf(dat.dataset) >= 0;
   });
 };
