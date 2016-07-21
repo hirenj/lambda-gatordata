@@ -72,7 +72,7 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
     params = {
      'TableName' : data_table,
      'Key' : {'acc' : 'metadata', 'dataset' : set_id },
-     'UpdateExpression': 'SET #md5 = :md5 ADD #gids :group AND #metadata = :metadata',
+     'UpdateExpression': 'SET #md5 = :md5 ADD #gids :group SET #metadata = :metadata',
       'ExpressionAttributeValues': {
           ':group': dynamo.createSet([ group_id ]),
           ':md5'  : options.md5,
@@ -265,6 +265,9 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
   rs.pipe(new MetadataExtractor()).on('data',function(dat) {
     let metadata_uploaded = Promise.all([].concat(upload_promises)).then(function() {
       return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'md5' : md5_result.md5 });
+    }).catch(function(err) {
+      console.log(err);
+      throw err;
     });
     upload_promises.push(metadata_uploaded);
   });
