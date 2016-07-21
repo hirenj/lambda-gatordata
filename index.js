@@ -64,15 +64,15 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
   }
   var params;
   if (options.md5 && ! options.notmodified) {
-    let metadata = options.metadata || {};
-    metadata.mimetype = metadata.mimetype || 'application/json';
-    metadata.title = metadata.title || 'Untitled';
+    let metadata = {};
+    metadata.mimetype = (options.metadata || {}).mimetype || 'application/json';
+    metadata.title = (options.metadata || {}).title || 'Untitled';
     // This is new data being inserted into
     // the database
     params = {
      'TableName' : data_table,
      'Key' : {'acc' : 'metadata', 'dataset' : set_id },
-     'UpdateExpression': 'SET #md5 = :md5 ADD #gids :group SET #metadata = :metadata',
+     'UpdateExpression': 'SET #md5 = :md5, #metadata = :metadata ADD #gids :group',
       'ExpressionAttributeValues': {
           ':group': dynamo.createSet([ group_id ]),
           ':md5'  : options.md5,
