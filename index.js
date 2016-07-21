@@ -452,7 +452,7 @@ let reset_split_queue = function(queue,arn) {
     }
   })
   .then( () => console.log("Increasing capacity to ",Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
-  .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10)
+  .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
   .catch(function(err) {
     if (err.message == 'No messages') {
       return shutdown_split_queue().then(function() {
