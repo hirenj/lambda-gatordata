@@ -321,7 +321,7 @@ var inflate_item = function(item) {
 
 };
 
-var download_all_data_db = function(accession,grants) {
+var download_all_data_db = function(accession,grants,dataset) {
   var params = {
     TableName: data_table,
     KeyConditionExpression: 'acc = :acc',
@@ -336,6 +336,12 @@ var download_all_data_db = function(accession,grants) {
       ':acc': 'metadata',
     }
   };
+  if (dataset) {
+    params.KeyConditionExpression = 'acc = :acc and dataset = :dataset';
+    params_metadata.KeyConditionExpression = 'acc = :acc and dataset = :dataset';
+    params.ExpressionAttributeValues[':dataset'] = dataset;
+    params_metadata.ExpressionAttributeValues[':dataset'] = dataset;
+  }
   return Promise.all([
     dynamo.query(params).promise(),
     dynamo.query(params_metadata).promise()
@@ -398,7 +404,7 @@ var download_set_s3 = function(set) {
   });
 };
 
-var download_all_data_s3 = function(accession,grants) {
+var download_all_data_s3 = function(accession,grants,dataset) {
   // Get metadata entries that contain the desired accession
   var start_time = (new Date()).getTime();
   console.log("datasets_containing_acc start ");
@@ -436,8 +442,8 @@ var download_all_data_s3 = function(accession,grants) {
   });
 };
 
-var download_all_data = function(accession,grants) {
-  return download_all_data_db(accession,grants);
+var download_all_data = function(accession,grants,dataset) {
+  return download_all_data_db(accession,grants,dataset);
 };
 
 var combine_sets = function(entries) {
@@ -619,11 +625,13 @@ var readAllData = function readAllData(event,context) {
 
   var grants = event.grants ? JSON.parse(event.grants) : {};
 
+  var dataset = (event.dataset || '').split(':')[1];
+
   // Decode JWT
   // Get groups/datasets that can be read
   let start_time = null;
 
-  download_all_data(accession,grants).then(function(entries) {
+  download_all_data(accession,grants,dataset).then(function(entries) {
     start_time = (new Date()).getTime();
     console.log("combine_sets start");
     return entries;
