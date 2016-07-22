@@ -351,7 +351,12 @@ var download_all_data_db = function(accession,grants,dataset) {
     return Promise.all(db_data.Items.map(inflate_item)).then(function(items) {
       return meta_data.Items.concat(items);
     });
-  }).then(filter_db_datasets.bind(null,grants));
+  }).then(filter_db_datasets.bind(null,grants)).then(function(results) {
+    if (results.length <= 1 && dataset) {
+      return results[0];
+    }
+    return results;
+  });
 };
 
 var filter_db_datasets = function(grants,data) {
