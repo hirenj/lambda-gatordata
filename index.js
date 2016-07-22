@@ -452,6 +452,9 @@ var download_all_data = function(accession,grants,dataset) {
 };
 
 var combine_sets = function(entries) {
+  if ( ! entries.map ) {
+    return entries;
+  }
   var results = {"data" : []};
   results.data = entries.map(function(entry) { return entry; });
   return results;
