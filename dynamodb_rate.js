@@ -86,6 +86,7 @@ function Offsetter(offset,options) {
     this.startOffset = 0;
     this.done = true;
   }
+  console.log("Created offsetter, state is ",this.done,this.startOffset);
   Transform.call(this, options);
 }
 

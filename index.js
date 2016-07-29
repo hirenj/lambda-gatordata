@@ -68,6 +68,7 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
     let metadata = {};
     metadata.mimetype = (options.metadata || {}).mimetype || 'application/json';
     metadata.title = (options.metadata || {}).title || 'Untitled';
+    console.log("Derived metadata to be ",metadata);
     // This is new data being inserted into
     // the database
     params = {
@@ -100,7 +101,7 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
       }
     };
   }
-  console.log("Adding ",group_id," to set ",set_id," with meta ",options.md5,options.notmodified);
+  console.log("Adding ",group_id," to set ",set_id," with meta ",options.md5,options.notmodified ? "Not modified" : "Modified");
   return dynamo.update(params).promise();
 };
 
@@ -253,20 +254,21 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
 
   if (! skip_remove) {
     return remove_folder(group_id+":"+dataset_id).then(function() {
-      return split_file(filekey,true,current_md5,offset);
+      return split_file(filekey,true,current_md5,offset,byte_offset);
     });
   }
 
   var md5_result = { old: current_md5 };
 
-  var rs = retrieve_file(filekey,md5_result,byte_offset);
-  var upload_promises = [];
-
-  console.log("Performing an upload for ",group_id,dataset_id,md5_result);
-
   let byte_offsetter = new Offsetter(byte_offset);
 
-  let entry_data = rs.pipe(byte_offsetter).pipe(JSONStream.parse(['data', {'emitKey': true}]));
+  var rs = retrieve_file(filekey,md5_result,byte_offset).pipe(byte_offsetter);
+  var upload_promises = [];
+
+  console.log("Performing an upload for ",group_id,dataset_id,md5_result," reading starting at ",byte_offset);
+
+
+  let entry_data = rs.pipe(JSONStream.parse(['data', {'emitKey': true}]));
   upload_promises.push( upload_data_record("data/latest/"+group_id+":"+dataset_id, entry_data,offset,byte_offsetter) );
 
   rs.pipe(new MetadataExtractor()).on('data',function(dat) {
@@ -588,7 +590,11 @@ var runSplitQueue = function(event,context) {
           last_item = last_item.PutRequest.Item.acc;
         }
         console.log("First item on queue ",last_item );
-        return queue.sendMessage({'path' : message_body.path, 'offset' : last_item, 'byte_offset' : uploader.byte_offset.offset });
+        let current_byte_offset = uploader.byte_offset.offset;
+        if (current_byte_offset < 0) {
+          current_byte_offset = 0;
+        }
+        return queue.sendMessage({'path' : message_body.path, 'offset' : last_item, 'byte_offset' : current_byte_offset });
       }).catch(function(err) {
         console.log(err.stack);
         console.log(err);
