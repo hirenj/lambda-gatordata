@@ -380,13 +380,13 @@ var filter_db_datasets = function(grants,data) {
     let valid_prots = null;
     if (grants[set.group_id+'/'+set.id]) {
       valid_prots = grants[set.group_id+'/'+set.id];
-      if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+      if (accession == 'publications' || valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
         valid_sets.push(set.id);
       }
     }
     if (grants[set.group_id+'/*']) {
       valid_prots = grants[set.group_id+'/*'];
-      if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+      if (accession == 'publications' || valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
         valid_sets.push(set.id);
       }
     }
@@ -423,11 +423,11 @@ var download_all_data_s3 = function(accession,grants,dataset) {
 
       if (grants[set.group_id+'/'+set.id]) {
         valid_prots = grants[set.group_id+'/'+set.id];
-        if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
+        if (acc == 'publications' || valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
           valid_sets.push(set.group_id+':'+set.id);
         }
       }
-      if (grants[set.group_id+'/*']) {
+      if (acc == 'publications' || grants[set.group_id+'/*']) {
         valid_prots = grants[set.group_id+'/*'];
         if (valid_prots.filter(function(id) { return id == '*' || id.toLowerCase() == accession; }).length > 0) {
           valid_sets.push(set.group_id+':'+set.id);
