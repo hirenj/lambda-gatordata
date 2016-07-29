@@ -69,13 +69,48 @@ function MetadataExtractor(options) {
 
 inherits(MetadataExtractor, Transform);
 
-// {"path":"uploads/glycodomain/public","offset":"h3bs64"}
-
 MetadataExtractor.prototype._transform = function _transform(obj, encoding, callback) {
   this.parser.write(obj);
   callback();
 };
 
+
+function Offsetter(offset,options) {
+  if ( ! (this instanceof Offsetter))
+    return new Offsetter(offset,options);
+
+  if (! options) options = {};
+  options.objectMode = true;
+  this.startOffset = offset;
+  if ( ! this.startOffset ) {
+    this.startOffset = 0;
+    this.done = true;
+  }
+  Transform.call(this, options);
+}
+
+inherits(Offsetter, Transform);
+
+Offsetter.prototype._transform = function _transform(obj, encoding, callback) {
+  this.offset = this.startOffset + (this.bytesConsumed || 0) - 1024*1024;
+  this.bytesConsumed = (this.bytesConsumed || 0) + obj.length;
+  if (this.done) {
+    this.push(obj);
+    callback();
+    return;
+  }
+
+  let chunk = obj.toString();
+  let newline = chunk.indexOf('\n');
+
+  if (newline < 0) {
+    callback();
+    return;
+  }
+  this.done = true;
+  this.push('{ "data" : {'+chunk.substring(newline));
+  callback();
+};
 
 function JSONtoDynamodb(set_id,offset,options) {
   if ( ! (this instanceof JSONtoDynamodb))
@@ -272,6 +307,7 @@ class Uploader {
 }
 
 exports.MetadataExtractor = MetadataExtractor;
+exports.Offsetter = Offsetter;
 
 exports.createUploadPipe = function(table,setid,groupid,offset) {
   let inpipe = new JSONtoDynamodb(setid,offset);

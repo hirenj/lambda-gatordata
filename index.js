@@ -13,6 +13,7 @@ const Queue = require('lambda-helpers').queue;
 const Events = require('lambda-helpers').events;
 
 const MetadataExtractor = require('./dynamodb_rate').MetadataExtractor;
+const Offsetter = require('./dynamodb_rate').Offsetter;
 
 const MIN_WRITE_CAPACITY = 1;
 const MAX_WRITE_CAPACITY = 200;
@@ -113,7 +114,7 @@ let uploader = null;
 // we don't end up keeping all the elements
 // in memory.. filter?
 
-var upload_data_record_db = function upload_data_record_db(key,data,offset) {
+var upload_data_record_db = function upload_data_record_db(key,data,offset,byte_offset) {
 
   if ( ! key ) {
     return uploader.finished.promise;
@@ -128,6 +129,7 @@ var upload_data_record_db = function upload_data_record_db(key,data,offset) {
     console.log("Starting uploader");
     uploader = require('./dynamodb_rate').createUploadPipe(data_table,set_id,group_id,offset);
     uploader.capacity = MAX_WRITE_CAPACITY;
+    uploader.byte_offset = byte_offset;
     data.pipe(uploader.data);
     uploader.start();
   }
@@ -153,16 +155,19 @@ var upload_data_record_s3 = function upload_data_record_s3(key,data) {
   return s3.upload(params, options).promise();
 };
 
-var upload_data_record = function upload_data_record(key,data,offset) {
-  return upload_data_record_db(key,data,offset);
+var upload_data_record = function upload_data_record(key,data,offset,byte_offset) {
+  return upload_data_record_db(key,data,offset,byte_offset);
 };
 
-var retrieve_file_s3 = function retrieve_file_s3(filekey,md5_result) {
+var retrieve_file_s3 = function retrieve_file_s3(filekey,md5_result,byte_offset) {
   var params = {
     'Key' : filekey,
     'Bucket' : bucket_name,
     'IfNoneMatch' : md5_result.old+"",
   };
+  if (byte_offset) {
+    params.Range = 'bytes='+byte_offset+'-'
+  }
   var request = s3.getObject(params);
   var stream = request.createReadStream();
   stream.on('finish',function() {
@@ -175,8 +180,8 @@ var retrieve_file_local = function retrieve_file_local(filekey) {
   return fs.createReadStream(filekey);
 };
 
-var retrieve_file = function retrieve_file(filekey,md5_result) {
-  return retrieve_file_s3(filekey,md5_result);
+var retrieve_file = function retrieve_file(filekey,md5_result,byte_offset) {
+  return retrieve_file_s3(filekey,md5_result,byte_offset);
 };
 
 var remove_folder = function remove_folder(setkey) {
@@ -237,7 +242,7 @@ var remove_data = function remove_data(filekey) {
   });
 };
 
-var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
+var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte_offset) {
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
@@ -254,13 +259,15 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset) {
 
   var md5_result = { old: current_md5 };
 
-  var rs = retrieve_file(filekey,md5_result);
+  var rs = retrieve_file(filekey,md5_result,byte_offset);
   var upload_promises = [];
 
   console.log("Performing an upload for ",group_id,dataset_id,md5_result);
 
-  let entry_data = rs.pipe(JSONStream.parse(['data', {'emitKey': true}]));
-  upload_promises.push( upload_data_record("data/latest/"+group_id+":"+dataset_id, entry_data,offset) );
+  let byte_offsetter = new Offsetter(byte_offset);
+
+  let entry_data = rs.pipe(byte_offsetter).pipe(JSONStream.parse(['data', {'emitKey': true}]));
+  upload_promises.push( upload_data_record("data/latest/"+group_id+":"+dataset_id, entry_data,offset,byte_offsetter) );
 
   rs.pipe(new MetadataExtractor()).on('data',function(dat) {
     let metadata_uploaded = Promise.all([].concat(upload_promises)).then(function() {
@@ -581,7 +588,7 @@ var runSplitQueue = function(event,context) {
           last_item = last_item.PutRequest.Item.acc;
         }
         console.log("First item on queue ",last_item );
-        return queue.sendMessage({'path' : message_body.path, 'offset' : last_item });
+        return queue.sendMessage({'path' : message_body.path, 'offset' : last_item, 'byte_offset' : uploader.byte_offset.offset });
       }).catch(function(err) {
         console.log(err.stack);
         console.log(err);
@@ -592,7 +599,7 @@ var runSplitQueue = function(event,context) {
     },(60*5 - 10)*1000);
 
     let result = get_current_md5(message_body.path)
-    .then((md5) => split_file(message_body.path,null,md5,message_body.offset))
+    .then((md5) => split_file(message_body.path,null,md5,message_body.offset,message_body.byte_offset))
     .then(function() {
       uploader = null;
       clearTimeout(timelimit);
