@@ -503,7 +503,7 @@ let reset_split_queue = function(queue,arn) {
       throw err;
     }
   })
-  .then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 60*1000)) )
+  .then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 2*60*1000)) )
   .then(function(newrule) {
       console.log("Making sure function is subscribed to event");
       return Events.subscribe('runSplitQueue',arn,{ 'time' : 'triggered' });
@@ -609,8 +609,8 @@ var runSplitQueue = function(event,context) {
     .then(function() {
       uploader = null;
       clearTimeout(timelimit);
-      console.log("Finished reading file, calling runSplitQueue immediately, will run again at ",new Date(new Date().getTime() + 60*1000));
-      return message.finalise().then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 60*1000)));
+      console.log("Finished reading file, calling runSplitQueue immediately, will run again at ",new Date(new Date().getTime() + 2*60*1000));
+      return message.finalise().then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 2*60*1000)));
     });
     return result;
   }).then(function(ok) {
