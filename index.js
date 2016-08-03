@@ -383,6 +383,7 @@ var filter_db_datasets = function(grants,data) {
     metadatas[set.dataset] = set.metadata;
     sets = sets.concat(set.group_ids.values.map(function(group) { return { group_id: group, id: set.dataset }; }));
   });
+  console.log("Metadatas for data is ",JSON.stringify(metadatas),JSON.stringify(sets));
   var valid_sets = [];
   // Filter metadata by the JWT permissions
   sets.forEach(function(set) {
@@ -400,10 +401,14 @@ var filter_db_datasets = function(grants,data) {
       }
     }
   });
-  return data.filter(function(dat) {
+  console.log("Valid sets are ",valid_sets.join(','));
+  console.log("Returned sets are ",data.map(function(dat) { return dat.dataset; }));
+  let valid_data = data.filter(function(dat) {
     dat.metadata = metadatas[dat.dataset];
     return dat.acc !== 'metadata' && valid_sets.indexOf(dat.dataset) >= 0;
   });
+  console.log("We allowed ",valid_data.length," entries ");
+  return valid_data;
 };
 
 var download_set_s3 = function(set) {
@@ -461,7 +466,7 @@ var download_all_data = function(accession,grants,dataset) {
 };
 
 var combine_sets = function(entries) {
-  if ( ! entries.map ) {
+  if ( ! entries || ! entries.map ) {
     return entries;
   }
   var results = {"data" : []};
