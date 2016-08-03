@@ -381,7 +381,7 @@ var filter_db_datasets = function(grants,data) {
     return data.acc == 'metadata';
   }).forEach(function(set) {
     metadatas[set.dataset] = set.metadata;
-    sets = sets.concat(set.group_ids.values.map(function(group) { return { group_id: group, id: set.dataset }; }));
+    sets = sets.concat((set.group_ids || {'values':[]}).values.map(function(group) { return { group_id: group, id: set.dataset }; }));
   });
   console.log("Metadatas for data is ",JSON.stringify(metadatas),JSON.stringify(sets));
   var valid_sets = [];
