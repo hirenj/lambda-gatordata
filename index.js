@@ -23,8 +23,10 @@ var metadata_table = 'test-datasets';
 var data_table = 'data';
 var split_queue = 'SplitQueue';
 
+let config = {};
+
 try {
-    var config = require('./resources.conf.json');
+    config = require('./resources.conf.json');
     bucket_name = config.buckets.dataBucket;
     metadata_table = config.tables.datasets;
     data_table = config.tables.data;
@@ -32,6 +34,9 @@ try {
 } catch (e) {
 }
 
+if (config.region) {
+  require('lambda-helpers').AWS.setRegion(config.region);
+}
 
 var get_current_md5 = function get_current_md5(filekey) {
   var filekey_components = filekey.split('/');
