@@ -646,7 +646,7 @@ Test event
 var readAllData = function readAllData(event,context) {
   console.log("readAllData");
   console.log(event);
-  var token = event.authorizationToken.split(' ');
+  var token = event.Authorization.split(' ');
   var accession = event.acc.toLowerCase();
 
   if(token[0] !== 'Bearer'){
