@@ -30,8 +30,8 @@ module.exports = function(grunt) {
 				options: {
 					file_name: 'index.js',
 					handler: 'index.splitFile',
+					region: config.region,
 				},
-        region: config.region,
 				function: config.functions['splitFiles'] || 'splitFiles',
 				arn: null,
 			},
@@ -40,8 +40,8 @@ module.exports = function(grunt) {
 				options: {
 					file_name: 'index.js',
 					handler: 'index.runSplitQueue',
+					region: config.region,
 				},
-        region: config.region,
 				function: config.functions['runSplitQueue'] || 'runSplitQueue',
 				arn: null,
 			},
@@ -50,8 +50,8 @@ module.exports = function(grunt) {
 				options: {
 					file_name: 'index.js',
 					handler: 'index.readAllData',
+					region: config.region,
 				},
-        region: config.region,
 				function: config.functions['readAllData'] || 'readAllData',
 				arn: null,
 			}
