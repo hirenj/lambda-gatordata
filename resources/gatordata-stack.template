@@ -71,7 +71,7 @@
         "Handler" : "index.runSplitQueue",
         "Role" : {"Fn::GetAtt" : ["LambdaRunSplitQueueRole", "Arn"] },
         "Runtime" : "nodejs4.3",
-        "MemorySize" : 128,
+        "MemorySize" : 512,
         "Timeout" : 300
       },
       "DependsOn" : "LambdaRunSplitQueueRole"
