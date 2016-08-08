@@ -51,7 +51,7 @@
         "Description" : "splitFiles",
         "Handler" : "index.splitFile",
         "Role" : {"Fn::GetAtt" : ["LambdaSplitFilesRole", "Arn"] },
-        "Runtime" : "nodejs",
+        "Runtime" : "nodejs4.3",
         "MemorySize" : 256,
         "Timeout" : 300
       },
@@ -70,7 +70,7 @@
         "Description" : "runSplitQueue",
         "Handler" : "index.runSplitQueue",
         "Role" : {"Fn::GetAtt" : ["LambdaRunSplitQueueRole", "Arn"] },
-        "Runtime" : "nodejs",
+        "Runtime" : "nodejs4.3",
         "MemorySize" : 128,
         "Timeout" : 300
       },
@@ -89,7 +89,7 @@
         "Description" : "readAllData",
         "Handler" : "index.readAllData",
         "Role" : {"Fn::GetAtt" : ["LambdaReadAllDataRole", "Arn"] },
-        "Runtime" : "nodejs",
+        "Runtime" : "nodejs4.3",
         "MemorySize" : 128,
         "Timeout" : 3
       },
