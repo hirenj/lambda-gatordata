@@ -268,7 +268,9 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
       return split_file(filekey,true,current_md5,offset,byte_offset);
     });
   }
-
+  if ( ! group_id ) {
+    return Promise.resolve();
+  }
   var md5_result = { old: current_md5 };
 
   let byte_offsetter = new Offsetter(byte_offset);
