@@ -202,6 +202,9 @@ var remove_folder_db = function remove_folder_db(setkey) {
   let ids = setkey.split(':');
   group_id = ids[0];
   let set_id = ids[1];
+  if ( ! group_id ) {
+    return Promise.resolve();
+  }
   // We should remove the group from the entries in the dataset
   // Possibly another vacuum step to remove orphan datasets?
   // Maybe just get rid of the group in the datasets
