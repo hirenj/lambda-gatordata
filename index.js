@@ -73,6 +73,9 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
     let metadata = {};
     metadata.mimetype = (options.metadata || {}).mimetype || 'application/json';
     metadata.title = (options.metadata || {}).title || 'Untitled';
+    if ( (options.metadata || {}).doi ) {
+      metadata.doi = [].concat( (options.metadata || {}).doi );
+    }
     console.log("Derived metadata to be ",metadata);
     // This is new data being inserted into
     // the database
