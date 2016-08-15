@@ -275,7 +275,8 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
 
   let byte_offsetter = new Offsetter(byte_offset);
 
-  var rs = retrieve_file(filekey,md5_result,byte_offset).pipe(byte_offsetter);
+  var data_stream = retrieve_file(filekey,md5_result,byte_offset)
+  var rs = data_stream.pipe(byte_offsetter);
   var upload_promises = [];
 
   console.log("Performing an upload for ",group_id,dataset_id,md5_result," reading starting at ",byte_offset);
@@ -299,6 +300,9 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
       resolve(Promise.all(upload_promises));
     });
     rs.on('error',function(err) {
+      reject(err);
+    });
+    data_stream.on('error',function(err) {
       reject(err);
     });
   }).catch(function(err) {
