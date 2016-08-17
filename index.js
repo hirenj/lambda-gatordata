@@ -1,9 +1,6 @@
 'use strict';
 /*jshint esversion: 6, node:true */
 
-const AWS = require('lambda-helpers').AWS;
-const s3 = new AWS.S3();
-const dynamo = new AWS.DynamoDB.DocumentClient();
 const JSONStream = require('JSONStream');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -34,9 +31,14 @@ try {
 } catch (e) {
 }
 
+const AWS = require('lambda-helpers').AWS;
+
 if (config.region) {
   require('lambda-helpers').AWS.setRegion(config.region);
 }
+
+const s3 = new AWS.S3();
+const dynamo = new AWS.DynamoDB.DocumentClient();
 
 var get_current_md5 = function get_current_md5(filekey) {
   var filekey_components = filekey.split('/');
@@ -69,13 +71,15 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
     return Promise.resolve(true);
   }
   var params;
+  let doi_promise = Promise.resolve();
   if (options.md5 && ! options.notmodified) {
     let metadata = {};
     metadata.mimetype = (options.metadata || {}).mimetype || 'application/json';
     metadata.title = (options.metadata || {}).title || 'Untitled';
     if ( (options.metadata || {}).doi ) {
-      metadata.doi = [].concat( (options.metadata || {}).doi );
+      metadata.doi = (options.metadata || {}).doi;
     }
+    doi_promise = append_doi_dynamodb(set_id,metadata.doi);
     console.log("Derived metadata to be ",metadata);
     // This is new data being inserted into
     // the database
@@ -110,6 +114,25 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
     };
   }
   console.log("Adding ",group_id," to set ",set_id," with meta ",options.md5,options.notmodified ? "Not modified" : "Modified");
+  return dynamo.update(params).promise().then(() => doi_promise);
+};
+
+var append_doi_dynamodb = function append_doi_dynamodb(set_id,doi) {
+  if (! doi) {
+    return Promise.resolve();
+  }
+  let params = {
+   'TableName' : data_table,
+   'Key' : {'acc' : 'publications', 'dataset' : set_id },
+   'UpdateExpression': 'ADD #dois :doi',
+    'ExpressionAttributeValues': {
+        ':doi': dynamo.createSet([ doi ]),
+    },
+    'ExpressionAttributeNames' : {
+      '#dois' : 'dois'
+    }
+  };
+  console.log("Setting DOI",doi,"to set",set_id);
   return dynamo.update(params).promise();
 };
 
@@ -269,6 +292,7 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
     });
   }
   if ( ! group_id ) {
+    console.log("No group id, not uploading");
     return Promise.resolve();
   }
   var md5_result = { old: current_md5 };
