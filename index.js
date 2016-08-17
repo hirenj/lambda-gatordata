@@ -321,7 +321,7 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
 
   return new Promise(function(resolve,reject) {
     rs.on('end',function() {
-      resolve(Promise.all(upload_promises));
+      resolve();
     });
     rs.on('error',function(err) {
       reject(err);
@@ -333,9 +333,12 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
     if (err.statusCode == 304) {
       entry_data.end();
       console.log("File not modified, skipping splitting");
-      return upload_metadata_dynamodb(dataset_id,group_id,{'notmodified' : true});
+      upload_promises.length = 0;
+      upload_promises.push(upload_metadata_dynamodb(dataset_id,group_id,{'notmodified' : true}));
+    } else {
+      throw err;
     }
-  });
+  }).then(() => Promise.all(upload_promises)).then( () => "All upload promises resolved");
 };
 
 var datasets_containing_acc = function(acc) {
