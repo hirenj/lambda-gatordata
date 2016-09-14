@@ -740,6 +740,22 @@ var splitFile = function splitFile(event,context) {
   });
 };
 
+var refreshData = function() {
+  filter_db_datasets = function(grants,data) {
+    return data.filter((dat) => dat.acc === 'metadata');
+  };
+  return new Promise(function(resolve,reject) {
+    download_all_data('dummy',{}).then(function(metas) {
+      return Promise.all(metas.filter( meta => meta.group_ids ).map(function(meta) {
+        return upload_metadata_dynamodb_from_db(meta.dataset,meta.group_ids.values[0],{'notmodified' : false, 'metadata' : metas.metadata, 'md5' : '0' })
+        .then(() => (new Queue(split_queue)).sendMessage({'path' : 'uploads/'+meta.dataset+'/'+meta.group_ids.values[0] }));
+      }));
+    }).then(() => console.log("Starting queue up") && runSplitQueue({'time' : 'scheduled'},{'succeed' : resolve})).catch(reject);
+  });
+};
+
 exports.splitFile = splitFile;
 exports.readAllData = readAllData;
 exports.runSplitQueue = runSplitQueue;
+
+exports.refreshData = refreshData;
