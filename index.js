@@ -73,12 +73,9 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
   var params;
   let doi_promise = Promise.resolve();
   if (options.md5 && ! options.notmodified) {
-    let metadata = {};
-    metadata.mimetype = (options.metadata || {}).mimetype || 'application/json';
-    metadata.title = (options.metadata || {}).title || 'Untitled';
-    if ( (options.metadata || {}).doi ) {
-      metadata.doi = (options.metadata || {}).doi;
-    }
+    let metadata = options.metadata || {};
+    metadata.mimetype = metadata.mimetype || 'application/json';
+    metadata.title = metadata.title || 'Untitled';
     doi_promise = append_doi_dynamodb(set_id,metadata.doi);
     console.log("Derived metadata to be ",metadata);
     // This is new data being inserted into
