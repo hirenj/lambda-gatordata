@@ -399,6 +399,16 @@ var inflate_item = function(item) {
 
 };
 
+var get_homologues_db = function(accession) {
+  return download_all_data_db(accession,{'public/homology': ['*']},'homology')
+         .then(function(homologues) {
+            return download_all_data_db(homologues.family, { 'public/homology_alignment' : ['*']},'homology_alignment').then(function(alignments) {
+              homologues.alignments = alignments;
+              return homologues;
+            });
+         });
+};
+
 var download_all_data_db = function(accession,grants,dataset) {
   var params = {
     TableName: data_table,
@@ -543,6 +553,10 @@ var download_all_data_s3 = function(accession,grants,dataset) {
 
 var download_all_data = function(accession,grants,dataset) {
   return download_all_data_db(accession,grants,dataset);
+};
+
+var get_homologues = function(accession) {
+  return get_homologues_db(accession);
 };
 
 var combine_sets = function(entries) {
@@ -737,11 +751,22 @@ var readAllData = function readAllData(event,context) {
   // Get groups/datasets that can be read
   let start_time = null;
 
-  download_all_data(accession,grants,dataset).then(function(entries) {
-    start_time = (new Date()).getTime();
-    console.log("combine_sets start");
-    return entries;
-  }).then(combine_sets).then(function(combined) {
+  if (event.homology) {
+    entries_promise = get_homologues(accession).then(function(homologue_data) {
+      start_time = (new Date()).getTime();
+      console.log("homology start");
+      let homologues = homologue_data.ids;
+      let alignments = homologue_data.alignments;
+      return Promise.all( homologues.map( homologue => download_all_data(homologue,grants,dataset) ) );
+    }).then( (entrysets) => [[alignments]].concat(entrysets).reduce( (a,b) => a.concat(b) ) );
+  } else {
+    entries_promise = download_all_data(accession,grants,dataset).then(function(entries) {
+      start_time = (new Date()).getTime();
+      console.log("combine_sets start");
+      return entries;
+    });
+  }
+  entries_promise.then(combine_sets).then(function(combined) {
     console.log("combine_sets end ",(new Date()).getTime() - start_time);
     context.succeed(combined);
   }).catch(function(err) {
