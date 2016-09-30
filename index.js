@@ -400,9 +400,14 @@ var inflate_item = function(item) {
 };
 
 var get_homologues_db = function(accession) {
-  return download_all_data_db(accession,{'public/homology': ['*']},'homology')
+  return download_all_data_db(accession,{'homology/homology': ['*']},'homology')
          .then(function(homologues) {
-            return download_all_data_db(homologues.family, { 'public/homology_alignment' : ['*']},'homology_alignment').then(function(alignments) {
+            if (! homologues && ! homologues.data) {
+              return {'homology' : []};
+            }
+            let family = homologues.data.family;
+            homologues = {'homology' : homologues.data.homology };
+            return download_all_data_db(family, { 'homology/homology_alignment' : ['*']},'homology_alignment').then(function(alignments) {
               homologues.alignments = alignments;
               return homologues;
             });
@@ -751,14 +756,16 @@ var readAllData = function readAllData(event,context) {
   // Get groups/datasets that can be read
   let start_time = null;
 
+  let entries_promise = Promise.resolve([]);
+
   if (event.homology) {
     entries_promise = get_homologues(accession).then(function(homologue_data) {
       start_time = (new Date()).getTime();
       console.log("homology start");
-      let homologues = homologue_data.ids;
+      let homologues = homologue_data.homology;
       let alignments = homologue_data.alignments;
-      return Promise.all( homologues.map( homologue => download_all_data(homologue,grants,dataset) ) );
-    }).then( (entrysets) => [[alignments]].concat(entrysets).reduce( (a,b) => a.concat(b) ) );
+      return Promise.all( [ Promise.resolve([alignments]) ].concat(homologues.map( homologue => download_all_data(homologue.toLowerCase(),grants,dataset) ) ) );
+    }).then( (entrysets) => entrysets.reduce( (a,b) => a.concat(b) ) );
   } else {
     entries_promise = download_all_data(accession,grants,dataset).then(function(entries) {
       start_time = (new Date()).getTime();

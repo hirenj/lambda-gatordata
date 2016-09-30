@@ -137,7 +137,6 @@ JSONtoDynamodb.prototype._transform = function(obj,encoding,callback) {
     return;
   }
   let data = {'data': obj.value, 'acc' : obj.key.toLowerCase() };
-
   if (Array.isArray(data.data)) {
     data.data.forEach(function(dat) {
       if (dat.spectra) {
