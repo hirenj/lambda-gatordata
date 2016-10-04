@@ -65,6 +65,30 @@ var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3
   }}).promise();
 };
 
+var fix_empty_strings = function(meta) {
+  if (Array.isArray(meta)) {
+    meta.forEach(function(val,idx) {
+      if (val === '' || val === null) {
+        meta[idx] = ' ';
+      }
+      if (typeof val === 'object') {
+        fix_empty_strings(val);
+      }
+    });
+    return;
+  }
+  Object.keys(meta).forEach(function(key) {
+    if (typeof meta[key] === 'object') {
+      fix_empty_strings(meta[key]);
+    } else {
+      if (meta[key] === null || meta[key] === '') {
+        console.log("Removing key ",key);
+        delete meta[key];
+      }
+    }
+  });
+};
+
 var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,options) {
   if (options.remove) {
     // Don't need to remove the group id as it's already deleted
@@ -77,6 +101,9 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
     metadata.mimetype = metadata.mimetype || 'application/json';
     metadata.title = metadata.title || 'Untitled';
     doi_promise = append_doi_dynamodb(set_id,metadata.doi);
+
+    fix_empty_strings(metadata);
+
     console.log("Derived metadata to be ",metadata);
     // This is new data being inserted into
     // the database
