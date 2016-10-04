@@ -138,14 +138,16 @@ JSONtoDynamodb.prototype._transform = function(obj,encoding,callback) {
   }
   let data = {'data': obj.value, 'acc' : obj.key.toLowerCase() };
 
-  data.data.forEach(function(dat) {
-    if (dat.spectra) {
-      delete dat.spectra;
-    }
-    if (dat.interpro) {
-      delete dat.interpro;
-    }
-  });
+  if (Array.isArray(data.data)) {
+    data.data.forEach(function(dat) {
+      if (dat.spectra) {
+        delete dat.spectra;
+      }
+      if (dat.interpro) {
+        delete dat.interpro;
+      }
+    });
+  }
 
   var block = {
     'acc' : data.acc,
