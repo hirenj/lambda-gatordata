@@ -405,14 +405,25 @@ var download_all_data_db = function(accession,grants,dataset) {
     KeyConditionExpression: 'acc = :acc',
     ExpressionAttributeValues: {
       ':acc': accession,
-    }
+    },
+    ExpressionAttributeNames: {
+      '#sample': 'metadata.sample',
+      '#title' : 'metadata.title',
+      '#data' : 'data'
+    },
+    ProjectionExpression : 'acc,dataset,group_ids,#data,metadata.mimetype,#sample,#title'
   };
   var params_metadata = {
     TableName: data_table,
     KeyConditionExpression: 'acc = :acc',
     ExpressionAttributeValues: {
-      ':acc': 'metadata',
-    }
+      ':acc': 'metadata'
+    },
+    ExpressionAttributeNames: {
+      '#sample': 'metadata.sample',
+      '#title' : 'metadata.title'
+    },
+    ProjectionExpression : 'acc,dataset,group_ids,metadata.mimetype,#sample,#title'
   };
   if (dataset) {
     params.KeyConditionExpression = 'acc = :acc and dataset = :dataset';
