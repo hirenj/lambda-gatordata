@@ -690,7 +690,7 @@ var runSplitQueue = function(event,context) {
     },(60*5 - 10)*1000);
 
     let result = get_current_md5(message_body.path)
-    .then((md5) => split_file(message_body.path,null,message_body.byte_offset ? '0' : md5,message_body.offset,message_body.byte_offset))
+    .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))
     .then(function() {
       uploader = null;
       clearTimeout(timelimit);
@@ -786,8 +786,8 @@ var refreshMetadata = function() {
     Prefix: "uploads/"
   };
   return s3.listObjectsV2(params).promise().then(function(result) {
-    let messages = result.Contents.map( (dataset) => { return { "path" : dataset.Key, "offset" : (new Date()).toString(), "byte_offset" : dataset.Size > (1024*50) ? dataset.Size - (1024*50) : 1 }; } );
-    messages = messages.filter( (message) => message.path.indexOf('dnd00') >= 0 );
+    let messages = result.Contents.map( (dataset) => { return { "path" : dataset.Key, "offset" : "dummy", "byte_offset" : dataset.Size > (1024*50) ? dataset.Size - (1024*50) : 0 }; } );
+    messages = messages.filter( (message) => message.path.indexOf('o_man') >= 0 );
     console.log(messages);
     return messages;
   }).then((messages) => {
