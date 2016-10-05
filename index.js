@@ -406,7 +406,7 @@ var get_homologues_db = function(accession) {
               return {'homology' : []};
             }
             let family = homologues.data.family;
-            homologues = {'homology' : homologues.data.homology };
+            homologues = {'homology' : homologues.data.homology.filter( (id) => id.toLowerCase() !== accession ) };
             return download_all_data_db(family, { 'homology/homology_alignment' : ['*']},'homology_alignment').then(function(alignments) {
               homologues.alignments = alignments;
               return homologues;
