@@ -407,11 +407,11 @@ var download_all_data_db = function(accession,grants,dataset) {
       ':acc': accession,
     },
     ExpressionAttributeNames: {
-      '#sample': 'metadata.sample',
-      '#title' : 'metadata.title',
+      '#sample': 'sample',
+      '#title' : 'title',
       '#data' : 'data'
     },
-    ProjectionExpression : 'acc,dataset,group_ids,#data,metadata.mimetype,#sample,#title'
+    ProjectionExpression : 'acc,dataset,group_ids,#data,metadata.mimetype,metadata.#sample,metadata.#title'
   };
   var params_metadata = {
     TableName: data_table,
@@ -420,10 +420,10 @@ var download_all_data_db = function(accession,grants,dataset) {
       ':acc': 'metadata'
     },
     ExpressionAttributeNames: {
-      '#sample': 'metadata.sample',
-      '#title' : 'metadata.title'
+      '#sample': 'sample',
+      '#title' : 'title'
     },
-    ProjectionExpression : 'acc,dataset,group_ids,metadata.mimetype,#sample,#title'
+    ProjectionExpression : 'acc,dataset,group_ids,metadata.mimetype,metadata.#sample,metadata.#title'
   };
   if (dataset) {
     params.KeyConditionExpression = 'acc = :acc and dataset = :dataset';
