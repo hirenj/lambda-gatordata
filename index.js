@@ -142,21 +142,22 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
 };
 
 var append_doi_dynamodb = function append_doi_dynamodb(set_id,doi) {
-  if (! doi) {
-    return Promise.resolve();
-  }
   let params = {
    'TableName' : data_table,
-   'Key' : {'acc' : 'publications', 'dataset' : set_id },
-   'UpdateExpression': 'ADD #dois :doi',
-    'ExpressionAttributeValues': {
-        ':doi': dynamo.createSet([ doi ]),
-    },
-    'ExpressionAttributeNames' : {
-      '#dois' : 'dois'
-    }
+   'Key' : {'acc' : 'publications', 'dataset' : set_id }
   };
-  console.log("Setting DOI",doi,"to set",set_id);
+  if (doi) {
+    params['UpdateExpression'] = 'ADD #dois :doi';
+    params['ExpressionAttributeValues'] = {
+        ':doi': dynamo.createSet([ doi ]),
+    };
+    params['ExpressionAttributeNames'] = {
+      '#dois' : 'dois'
+    };
+    console.log("Setting DOI",doi,"to set",set_id);
+  } else {
+    console.log("Adding dummmy publication entry");
+  }
   return dynamo.update(params).promise();
 };
 
@@ -678,7 +679,7 @@ var runSplitQueue = function(event,context) {
     },(60*5 - 10)*1000);
 
     let result = get_current_md5(message_body.path)
-    .then((md5) => split_file(message_body.path,null,md5,message_body.offset,message_body.byte_offset))
+    .then((md5) => split_file(message_body.path,null,message_body.byte_offset ? '0' : md5,message_body.offset,message_body.byte_offset))
     .then(function() {
       uploader = null;
       clearTimeout(timelimit);
@@ -767,6 +768,25 @@ var splitFile = function splitFile(event,context) {
   });
 };
 
+var refreshMetadata = function() {
+  var s3 = new AWS.S3();
+  var params = {
+    Bucket: bucket_name,
+    Prefix: "uploads/"
+  };
+  return s3.listObjectsV2(params).promise().then(function(result) {
+    let messages = result.Contents.map( (dataset) => { return { "path" : dataset.Key, "offset" : (new Date()).toString(), "byte_offset" : dataset.Size > (1024*50) ? dataset.Size - (1024*50) : 1 }; } );
+    messages = messages.filter( (message) => message.path.indexOf('dnd00') >= 0 );
+    console.log(messages);
+    return messages;
+  }).then((messages) => {
+    let queue = new Queue(split_queue);
+    Promise.all(messages.map( message => queue.sendMessage(message) ))
+  }).then( () => {
+    return require('lambda-helpers').lambda_promise(runSplitQueue)({'time' : 'triggered'});
+  });
+};
+
 var refreshData = function() {
   filter_db_datasets = function(grants,data) {
     return data.filter((dat) => dat.acc === 'metadata');
@@ -786,3 +806,4 @@ exports.readAllData = readAllData;
 exports.runSplitQueue = runSplitQueue;
 
 exports.refreshData = refreshData;
+exports.refreshMetadata = refreshMetadata;
