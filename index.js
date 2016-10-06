@@ -414,6 +414,8 @@ var get_homologues_db = function(accession) {
          });
 };
 
+var metadata_promise;
+
 var download_all_data_db = function(accession,grants,dataset) {
   var params = {
     TableName: data_table,
@@ -446,9 +448,12 @@ var download_all_data_db = function(accession,grants,dataset) {
     params.ExpressionAttributeValues[':dataset'] = dataset;
     params_metadata.ExpressionAttributeValues[':dataset'] = dataset;
   }
+  if ( ! metadata_promise && ! dataset ) {
+    metadata_promise = dynamo.query(params_metadata).promise();
+  }
   return Promise.all([
     dynamo.query(params).promise(),
-    dynamo.query(params_metadata).promise()
+    dataset ? dynamo.query(params_metadata).promise() : metadata_promise
   ]).then(function(data) {
     var meta_data = data[1];
     var db_data = data[0];
