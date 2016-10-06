@@ -582,7 +582,7 @@ let set_write_capacity = function(capacity) {
   var params = {
     TableName: data_table,
     ProvisionedThroughput: {
-      ReadCapacityUnits: 1,
+      ReadCapacityUnits: 10,
       WriteCapacityUnits: capacity
     }
   };
