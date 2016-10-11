@@ -402,7 +402,7 @@ var inflate_item = function(item) {
 var get_homologues_db = function(accession) {
   return download_all_data_db(accession,{'homology/homology': ['*']},'homology')
          .then(function(homologues) {
-            if (! homologues && ! homologues.data) {
+            if (! homologues || ! homologues.data) {
               return {'homology' : []};
             }
             let family = homologues.data.family;
