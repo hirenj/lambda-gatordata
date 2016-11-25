@@ -14,6 +14,7 @@ const Offsetter = require('./dynamodb_rate').Offsetter;
 
 const MIN_WRITE_CAPACITY = 1;
 const MAX_WRITE_CAPACITY = 200;
+const DEFAULT_READ_CAPACITY = process.env.DEFAULT_READ_CAPACITY ? process.env.DEFAULT_READ_CAPACITY : 1;
 
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
@@ -582,7 +583,7 @@ let set_write_capacity = function(capacity) {
   var params = {
     TableName: data_table,
     ProvisionedThroughput: {
-      ReadCapacityUnits: 10,
+      ReadCapacityUnits: DEFAULT_READ_CAPACITY,
       WriteCapacityUnits: capacity
     }
   };
@@ -745,17 +746,19 @@ Test event
 var readAllData = function readAllData(event,context) {
   console.log("readAllData");
   console.log(event);
-  var token = event.Authorization.split(' ');
   var accession = event.acc.toLowerCase();
-
-  if(token[0] !== 'Bearer'){
-    context.succeed('NOT-OK');
-    return;
-  }
 
   var grants = event.grants ? JSON.parse(event.grants) : {};
 
-  var dataset = (event.dataset || '').split(':')[1];
+  Object.keys(grants).forEach( (set) => {
+    if (grants.proteins[ grants[set][0] ]) {
+      grants[set] = grants.proteins[ grants[set][0] ];
+    }
+  });
+  delete grants.proteins;
+
+  event.dataset = event.dataset || '';
+  var dataset = (event.dataset.indexOf(':') < 0 ) ? event.dataset : event.dataset.split(':')[1];
 
   // Decode JWT
   // Get groups/datasets that can be read
