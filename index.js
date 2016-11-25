@@ -15,6 +15,8 @@ const Offsetter = require('./dynamodb_rate').Offsetter;
 const MIN_WRITE_CAPACITY = 1;
 const MAX_WRITE_CAPACITY = 200;
 const DEFAULT_READ_CAPACITY = process.env.DEFAULT_READ_CAPACITY ? process.env.DEFAULT_READ_CAPACITY : 1;
+const USE_BATCH_RETRIEVE = process.env.ENABLE_BATCH_RETRIEVE ? true : false;
+
 
 var bucket_name = 'test-gator';
 var metadata_table = 'test-datasets';
@@ -40,6 +42,22 @@ if (config.region) {
 
 const s3 = new AWS.S3();
 const dynamo = new AWS.DynamoDB.DocumentClient();
+const all_sets = [];
+
+let datasetnames = Promise.resolve();
+
+if (USE_BATCH_RETRIEVE) {
+  datasetnames = dynamo.get({'TableName' : data_table, 'Key' : { 'acc' : 'metadata', 'dataset' : 'datasets' }}).promise().then( (data) => {
+    console.log('Populating data sets');
+    all_sets.length = 0;
+    data.Item.sets.forEach( set => all_sets.push(set));
+    console.log('We have ',all_sets.length, 'sets in total');
+  });
+}
+
+const onlyUnique = function(value, index, self) {
+    return self.indexOf(value) === index;
+};
 
 var get_current_md5 = function get_current_md5(filekey) {
   var filekey_components = filekey.split('/');
@@ -418,6 +436,83 @@ var get_homologues_db = function(accession) {
 var metadata_promise;
 
 var download_all_data_db = function(accession,grants,dataset) {
+
+  if (USE_BATCH_RETRIEVE) {
+    return download_all_data_db_batch(accession,grants,dataset);
+  }
+
+  return download_all_data_db_query(accession,grants,dataset);
+};
+
+let dynamo_process_items = function(params,existing,data) {
+    if (data.UnprocessedKeys[data_table]) {
+      params.RequestItems[data_table].Keys = data.UnprocessedKeys[data_table].Keys;
+      return dynamo.batchGet(params).promise().then(dynamo_process_items.bind(null,params,data.Responses[data_table]));
+    }
+    return existing ? existing.concat(data.Responses[data_table]) : data.Responses[data_table];
+};
+
+var download_all_data_db_batch = function(accession,grants,dataset) {
+  console.time('download_all_data_db_batch');
+  let total_sets = [ dataset ];
+  let set_names = all_sets.map( (set) => set.split('/')[1] ).filter(onlyUnique);
+  if (! dataset) {
+    total_sets = set_names;
+  }
+  let query_keys = total_sets.map( (set) => { return { 'acc' : accession, 'dataset' : set } });
+  let meta_keys = set_names.map( (set) => { return { 'acc' : 'metadata', 'dataset' : set } });
+  if (metadata_promise) {
+    meta_keys = [];
+  }
+  if (accession === 'metadata') {
+    query_keys = [];
+  }
+  let params = {
+    RequestItems: {},
+    ExpressionAttributeNames: {
+      '#sample': 'sample',
+      '#title' : 'title',
+      '#data' : 'data'
+    },
+    ProjectionExpression : 'acc,dataset,group_ids,dois,#data,metadata.mimetype,metadata.#sample,metadata.#title'
+  };
+  params.RequestItems[data_table] = { 'Keys' : query_keys.concat(meta_keys)};
+  let all_items;
+  if(params.RequestItems[data_table].Keys.length == 0) {
+    all_items = Promise.resolve([]);
+  } else {
+    all_items = dynamo.batchGet(params).promise()
+    .then(dynamo_process_items.bind(null,params,null))
+    .then(function(items) {
+      console.timeEnd('download_all_data_db_batch');
+      return items;
+    });
+  }
+  if (! metadata_promise) {
+    metadata_promise = all_items.then( (items) => {
+      return items.filter( (item) => item.acc === 'metadata');
+    });
+  }
+  let inflated_items = all_items.then( (items) => {
+    console.time('download_all_data_inflate');
+    return Promise.all(items.filter((item) => item.acc !== 'metadata').map(inflate_item)).then( (inflated) => {
+      console.timeEnd('download_all_data_inflate');
+      return inflated;
+    });
+  })
+  return Promise.all([ inflated_items , metadata_promise ])
+  .then( items => items[0].concat(items[1]) )
+  .then(filter_db_datasets.bind(null,grants)).then(function(results) {
+    if (results.length <= 1 && dataset) {
+      return results[0];
+    }
+    return results;
+  });
+
+};
+
+var download_all_data_db_query = function(accession,grants,dataset) {
+  console.time('download_all_data_db_query');
   var params = {
     TableName: data_table,
     KeyConditionExpression: 'acc = :acc',
@@ -456,9 +551,12 @@ var download_all_data_db = function(accession,grants,dataset) {
     dynamo.query(params).promise(),
     dataset ? dynamo.query(params_metadata).promise() : metadata_promise
   ]).then(function(data) {
+    console.timeEnd('download_all_data_db_query');
     var meta_data = data[1];
     var db_data = data[0];
+    console.time('download_all_data_inflate');
     return Promise.all(db_data.Items.map(inflate_item)).then(function(items) {
+      console.timeEnd('download_all_data_inflate');
       return meta_data.Items.concat(items);
     });
   }).then(filter_db_datasets.bind(null,grants)).then(function(results) {
@@ -767,22 +865,26 @@ var readAllData = function readAllData(event,context) {
   let entries_promise = Promise.resolve([]);
 
   if (event.homology) {
-    entries_promise = get_homologues(accession).then(function(homologue_data) {
-      start_time = (new Date()).getTime();
-      console.log("homology start");
+    entries_promise = datasetnames.then( () => get_homologues(accession)).then(function(homologue_data) {
+      console.time('homology');
       let homologues = homologue_data.homology;
       let alignments = homologue_data.alignments;
       return Promise.all( [ Promise.resolve([alignments]) ].concat(homologues.map( homologue => download_all_data(homologue.toLowerCase(),grants,dataset) ) ) );
-    }).then( (entrysets) => entrysets.reduce( (a,b) => a.concat(b) ) );
+    })
+    .then( (sets) => { console.timeEnd('homology'); console.time('combine_sets'); return sets; })
+    .then( (entrysets) => entrysets.reduce( (a,b) => a.concat(b) ) );
   } else {
-    entries_promise = download_all_data(accession,grants,dataset).then(function(entries) {
-      start_time = (new Date()).getTime();
-      console.log("combine_sets start");
+    console.time('download_all_data')
+    entries_promise = datasetnames.then( () => download_all_data(accession,grants,dataset)).then(function(entries) {
+      console.timeEnd('download_all_data')
+      console.time('combine_sets');
       return entries;
     });
   }
-  entries_promise.then(combine_sets).then(function(combined) {
-    console.log("combine_sets end ",(new Date()).getTime() - start_time);
+
+  entries_promise
+  .then(combine_sets).then(function(combined) {
+    console.timeEnd('combine_sets');
     context.succeed(combined);
   }).catch(function(err) {
     console.error(err);
