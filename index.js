@@ -115,6 +115,8 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
   }
   var params;
   let doi_promise = Promise.resolve();
+  let dataset_promise = append_dataset_to_list_dynamodb(group_id+'/'+set_id);
+
   if (options.md5 && ! options.notmodified) {
     let metadata = options.metadata || {};
     metadata.mimetype = metadata.mimetype || 'application/json';
@@ -157,7 +159,23 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
     };
   }
   console.log("Adding ",group_id," to set ",set_id," with meta ",options.md5,options.notmodified ? "Not modified" : "Modified");
-  return dynamo.update(params).promise().then(() => doi_promise);
+  return dynamo.update(params).promise().then(() => dataset_promise ).then(() => doi_promise);
+};
+
+var append_dataset_to_list_dynamodb = function append_dataset_to_list_dynamodb(set_id,remove) {
+  let params = {
+   'TableName' : data_table,
+   'Key' : {'acc' : 'metadata', 'dataset' : 'datasets' }
+  };
+  params['UpdateExpression'] = remove? 'DELETE #sets :set' : 'ADD #sets :set';
+  params['ExpressionAttributeValues'] = {
+      ':set': dynamo.createSet([ set ]),
+  };
+  params['ExpressionAttributeNames'] = {
+    '#sets' : 'sets'
+  };
+  console.log("Adding ",set_id,"to list of sets");
+  return dynamo.update(params).promise();
 };
 
 var append_doi_dynamodb = function append_doi_dynamodb(set_id,doi) {
@@ -288,7 +306,7 @@ var remove_folder_db = function remove_folder_db(setkey) {
       '#gids' : 'group_ids'
     }
   };
-  return dynamo.update(params).promise();
+  return dynamo.update(params).promise().then( () => append_dataset_to_list_dynamodb(group_id+'/'+set_id,true));
 };
 
 var remove_folder_s3 = function remove_folder_s3(setkey) {
