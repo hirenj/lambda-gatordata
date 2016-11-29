@@ -169,13 +169,13 @@ var append_dataset_to_list_dynamodb = function append_dataset_to_list_dynamodb(s
   };
   params['UpdateExpression'] = remove? 'DELETE #sets :set' : 'ADD #sets :set';
   params['ExpressionAttributeValues'] = {
-      ':set': dynamo.createSet([ set ]),
+      ':set': dynamo.createSet([ set_id ]),
   };
   params['ExpressionAttributeNames'] = {
     '#sets' : 'sets'
   };
-  console.log("Adding ",set_id,"to list of sets");
-  return dynamo.update(params).promise();
+  console.log((remove ? "Adding " : "Removing "),set_id,"to list of sets");
+  return dynamo.update(params).promise().then( () => console.log("Updated list of sets ",set_id));
 };
 
 var append_doi_dynamodb = function append_doi_dynamodb(set_id,doi) {
