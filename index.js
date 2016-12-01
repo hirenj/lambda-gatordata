@@ -50,7 +50,7 @@ if (USE_BATCH_RETRIEVE) {
   datasetnames = dynamo.get({'TableName' : data_table, 'Key' : { 'acc' : 'metadata', 'dataset' : 'datasets' }}).promise().then( (data) => {
     console.log('Populating data sets');
     all_sets.length = 0;
-    data.Item.sets.forEach( set => all_sets.push(set));
+    data.Item.sets.values.forEach( set => all_sets.push(set));
     console.log('We have ',all_sets.length, 'sets in total');
   });
 }
