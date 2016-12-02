@@ -90,7 +90,7 @@
         "Handler" : "index.readAllData",
         "Role" : {"Fn::GetAtt" : ["LambdaReadAllDataRole", "Arn"] },
         "Runtime" : "nodejs4.3",
-        "MemorySize" : 128,
+        "MemorySize" : 1024,
         "Timeout" : 3
       },
       "DependsOn" : "LambdaReadAllDataRole"
