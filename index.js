@@ -911,7 +911,7 @@ var readAllData = function readAllData(event,context) {
   });
 };
 
-var splitFile = function splitFile(event,context) {
+var splitFiles = function splitFiles(event,context) {
   var filekey = require('querystring').unescape(event.Records[0].s3.object.key);
   var result_promise = Promise.resolve(true);
   if (event.Records[0].eventName.match(/ObjectRemoved/)) {
@@ -972,7 +972,7 @@ var refreshData = function() {
   });
 };
 
-exports.splitFile = splitFile;
+exports.splitFiles = splitFiles;
 exports.readAllData = readAllData;
 exports.runSplitQueue = runSplitQueue;
 
