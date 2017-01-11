@@ -43,13 +43,13 @@
       "Properties" : {
         "Code" : {
           "ZipFile": { "Fn::Join": ["", [
-            "exports.splitFile = function(event, context) {",
+            "exports.splitFiles = function(event, context) {",
             "  context.succeed('OK');",
             "};"
           ]]}
         },
         "Description" : "splitFiles",
-        "Handler" : "index.splitFile",
+        "Handler" : "index.splitFiles",
         "Role" : {"Fn::GetAtt" : ["LambdaSplitFilesRole", "Arn"] },
         "Runtime" : "nodejs4.3",
         "MemorySize" : 256,
