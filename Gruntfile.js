@@ -134,7 +134,7 @@ module.exports = function(grunt) {
     var AWS = require('aws-sdk');
     var lambda = new AWS.Lambda();
     grunt.log.writeln("Setting version for "+target+" to ",grunt.option('gitRevision').toString());
-    lambda.updateFunctionConfiguration({FunctionName: arn,Description: grunt.option('gitRevision').toString() },function(err,data) {
+    lambda.updateFunctionConfiguration({FunctionName: arn,Description: grunt.option('gitRevision').toString(),VpcConfig: { SecurityGroupIds: [], SubnetIds: [] } },function(err,data) {
       if ( ! err ) {
         done();
       } else {
