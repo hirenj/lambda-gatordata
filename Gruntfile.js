@@ -107,8 +107,10 @@ module.exports = function(grunt) {
     var lambda = new AWS.Lambda();
     lambda.getFunctionConfiguration({FunctionName: arn},function(err,data) {
       var git_status = grunt.option('gitRevision');
-      if (git_status.dirty) {
+      if (git_status.indexOf('dirty') >= 0) {
         grunt.log.writeln("Git repo is dirty, updating by default");
+      } else if (grunt.option('force_deploy')) {
+        grunt.log.writeln("Forcing deploy");
       } else {
         var current_version = data.Description;
         if (current_version === git_status.toString()) {
