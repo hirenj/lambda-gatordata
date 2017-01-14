@@ -131,13 +131,53 @@
         }
       }
     },
+    "runSplitQueueRule": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name" : "runSplitQueueRule",
+        "Description": "runSplitQueue triggering event",
+        "ScheduleExpression": "cron(1 1 1 1 ? 2000)",
+        "State": "ENABLED",
+        "Targets": [{
+          "Arn": { "Fn::GetAtt": ["runSplitQueue", "Arn"] },
+          "Id": "runSplitQueue",
+          "Input" : "{ \"time\": \"triggered\" }"
+        }]
+      }
+    },
+    "scheduleSplitQueueRule": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Name" : "scheduleSplitQueueRule",
+        "Description": "scheduleSplitQueue triggering event",
+        "ScheduleExpression": "rate(8 hours)",
+        "State": "ENABLED",
+        "Targets": [{
+          "Arn": { "Fn::GetAtt": ["runSplitQueue", "Arn"] },
+          "Id": "runSplitQueue",
+          "Input" : "{ \"time\": \"scheduled\" }"
+        }]
+      }
+    },
     "LambdaRunSplitQueueInvokePermission": {
       "Type": "AWS::Lambda::Permission",
       "Properties": {
         "FunctionName" : { "Fn::GetAtt" : ["runSplitQueue", "Arn"] },
         "Action": "lambda:InvokeFunction",
         "Principal": "events.amazonaws.com",
-        "SourceArn" : {"Fn::Join": [":", [ "arn:aws:events", { "Ref" : "AWS::Region" } , {"Ref" : "AWS::AccountId" }, "rule/runSplitQueue"]] }
+        "SourceArn" : { "Fn::GetAtt": ["runSplitQueueRule", "Arn"] }
+      },
+      "Metadata" : {
+        "Comment" : "Queue runner for splitting files"
+      }
+    },
+    "LambdaRunSplitQueueScheduleInvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName" : { "Fn::GetAtt" : ["runSplitQueue", "Arn"] },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn" : { "Fn::GetAtt": ["scheduleSplitQueueRule", "Arn"] }
       },
       "Metadata" : {
         "Comment" : "Queue runner for splitting files"
@@ -388,11 +428,14 @@
                 {
                   "Sid": "RegisterEvents",
                   "Effect": "Allow",
-                  "Action": [ "events:PutRule", "events:ListRules", "events:PutTargets" ],
-                  "Resource" : "*"
+                  "Action": [ "events:PutRule", "events:DescribeRule" ],
+                  "Resource" : {"Fn::Join": [":", [ "arn:aws:events", { "Ref" : "AWS::Region" } , {"Ref" : "AWS::AccountId" }, "rule/runSplitQueueRule"]] }
                 }
             ]
         }
+      },
+      "Metadata" : {
+        "break_circular" : { "Properties.PolicyDocument.Statement": [] }
       }
     }
   },

@@ -729,11 +729,8 @@ let reset_split_queue = function(queue,arn) {
       throw err;
     }
   })
-  .then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 2*60*1000)) )
-  .then(function(newrule) {
-      console.log("Making sure function is subscribed to event");
-      return Events.subscribe('runSplitQueue',arn,{ 'time' : 'triggered' });
-  }).catch(function(err) {
+  .then( () => Events.setTimeout('runSplitQueueRule',new Date(new Date().getTime() + 2*60*1000)) )
+  .catch(function(err) {
     console.log(err);
   });
 };
@@ -747,7 +744,7 @@ let shutdown_split_queue = function() {
     }
   }).then(function() {
     console.log("Clearing event rule");
-    return Events.setTimeout('runSplitQueue',new Date(new Date().getTime() - 60*1000));
+    return Events.setTimeout('runSplitQueueRule',new Date(new Date().getTime() - 60*1000));
   });
 };
 
@@ -768,11 +765,7 @@ var runSplitQueue = function(event,context) {
 
   if (! event.time ) {
     console.log("Initialising scheduler");
-    Events.setInterval('scheduleSplitQueue','8 hours').then(function(newrule) {
-      if (newrule) {
-        return Events.subscribe('scheduleSplitQueue',context.invokedFunctionArn,{ 'time' : 'scheduled' });
-      }
-    }).then(function() {
+    Events.setInterval('scheduleSplitQueueRule','8 hours').then(function() {
       context.succeed('OK');
     });
     return;
@@ -791,7 +784,7 @@ var runSplitQueue = function(event,context) {
 
   // We should do a pre-emptive subscribe for the event here
   console.log("Setting timeout for event");
-  let self_event = Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 6*60*1000));
+  let self_event = Events.setTimeout('runSplitQueueRule',new Date(new Date().getTime() + 6*60*1000));
   return self_event.then(() => queue.shift(1)).then(function(messages) {
     console.log("Got queue messages ",messages.map((message) => message.Body));
     if ( ! messages || ! messages.length ) {
@@ -836,7 +829,7 @@ var runSplitQueue = function(event,context) {
       uploader = null;
       clearTimeout(timelimit);
       console.log("Finished reading file, calling runSplitQueue immediately, will run again at ",new Date(new Date().getTime() + 2*60*1000));
-      return message.finalise().then( () => Events.setTimeout('runSplitQueue',new Date(new Date().getTime() + 2*60*1000)));
+      return message.finalise().then( () => Events.setTimeout('runSplitQueueRule',new Date(new Date().getTime() + 2*60*1000)));
     });
     return result;
   }).then(function(ok) {
