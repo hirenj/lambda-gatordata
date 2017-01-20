@@ -224,7 +224,6 @@
       "Type" : "AWS::SNS::Topic",
       "Properties" : {
         "DisplayName" : "Configuration Changes",
-        "TopicName" : "ConfChangesTopic",
         "Subscription" : []
       }
     },
