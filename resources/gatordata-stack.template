@@ -195,6 +195,13 @@
         "Comment" : "Scheduler for the runner to split files"
       }
     },
+    "ConfChangesTopic" : {
+      "Type" : "AWS::SNS::Topic",
+      "Properties" : {
+        "DisplayName" : "Configuration Changes",
+        "Subscription" : []
+      }
+    },
     "dataBucket": {
       "Type" : "AWS::S3::Bucket",
       "Properties" : {
@@ -208,6 +215,15 @@
           "Event" : "s3:ObjectRemoved:*",
           "Filter" : { "S3Key" : { "Rules" : [ {"Name" : "prefix", "Value" : "uploads/"} ] }},
           "Function" : { "Fn::GetAtt": [ "splitFiles", "Arn" ]}
+        }],
+        "TopicConfigurations" : [ {
+          "Event" : "s3:ObjectCreated:*",
+          "Filter" : { "S3Key" : { "Rules" : [ {"Name" : "prefix", "Value" : "conf"} ] }},
+          "Topic" : { "Ref" : "ConfChangesTopic"}
+        },{
+          "Event" : "s3:ObjectRemoved:*",
+          "Filter" : { "S3Key" : { "Rules" : [ {"Name" : "prefix", "Value" : "conf"} ] }},
+          "Topic" : { "Ref": "ConfChangesTopic" }
         }]
         }
       },
