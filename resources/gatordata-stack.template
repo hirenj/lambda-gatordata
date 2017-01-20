@@ -209,7 +209,11 @@
                 "AWS": "*"
               },
               "Action": "sns:Publish",
-              "Resource": "*"
+              "Resource": "*",
+              "Condition":{
+                "StringEquals":{ "AWS:SourceAccount": {"Ref" : "AWS::AccountId" } } ,
+                "ArnLike": {"AWS:SourceArn": { "Fn::Join": ["", [ "arn:aws:s3:::",{ "Ref" : "AWS::StackName" }, "-gator"]]}}
+              }
             }
           ]
         },
