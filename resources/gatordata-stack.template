@@ -1,5 +1,12 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
+  "Parameters" : {
+    "DEFAULTREADCAPACITY" : {
+      "Type" : "Number",
+      "Default" : 1,
+      "Description" : "Default capacity for reading from the data dynamodb table"
+    }
+  },
   "Resources": {
     "data": {
       "Type": "AWS::DynamoDB::Table",
@@ -69,6 +76,9 @@
         },
         "Description" : "runSplitQueue",
         "Handler" : "index.runSplitQueue",
+        "Environment" : { "Variables" : {
+          "DEFAULT_READ_CAPACITY" : {"Ref" : "DEFAULTREADCAPACITY"}
+        }},
         "Role" : {"Fn::GetAtt" : ["LambdaRunSplitQueueRole", "Arn"] },
         "Runtime" : "nodejs4.3",
         "MemorySize" : 512,
