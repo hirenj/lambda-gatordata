@@ -134,7 +134,7 @@
     "runSplitQueueRule": {
       "Type": "AWS::Events::Rule",
       "Properties": {
-        "Name" : { "Fn::Join": [ "" , ["runSplitQueueRule", "-", { "Ref" : "AWS::StackName" } ]],
+        "Name" : { "Fn::Join": [ "" , ["runSplitQueueRule", "-", { "Ref" : "AWS::StackName" } ]]},
         "Description": "runSplitQueue triggering event",
         "ScheduleExpression": "cron(1 1 1 1 ? 2000)",
         "State": "ENABLED",
@@ -148,7 +148,7 @@
     "scheduleSplitQueueRule": {
       "Type": "AWS::Events::Rule",
       "Properties": {
-        "Name" : "scheduleSplitQueueRule",
+        "Name" : { "Fn::Join": [ "" , ["scheduleSplitQueueRule", "-", { "Ref" : "AWS::StackName" } ]]},
         "Description": "scheduleSplitQueue triggering event",
         "ScheduleExpression": "rate(8 hours)",
         "State": "ENABLED",
@@ -181,18 +181,6 @@
       },
       "Metadata" : {
         "Comment" : "Queue runner for splitting files"
-      }
-    },
-    "LambdaRunSplitQueueInvokeScheduleSplitQueuePermission": {
-      "Type": "AWS::Lambda::Permission",
-      "Properties": {
-        "FunctionName" : { "Fn::GetAtt" : ["runSplitQueue", "Arn"] },
-        "Action": "lambda:InvokeFunction",
-        "Principal": "events.amazonaws.com",
-        "SourceArn" : {"Fn::Join": [":", [ "arn:aws:events", { "Ref" : "AWS::Region" } , {"Ref" : "AWS::AccountId" }, "rule/scheduleSplitQueue"]] }
-      },
-      "Metadata" : {
-        "Comment" : "Scheduler for the runner to split files"
       }
     },
     "ConfChangesTopicPolicy": {
