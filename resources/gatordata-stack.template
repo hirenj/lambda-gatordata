@@ -126,7 +126,7 @@
     "LambdaRunSplitQueueRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
-        "ManagedPolicyArns" : [ {"Ref" : "RegisterEvents"}, {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }, {"Ref" : "WriteSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }],
+        "ManagedPolicyArns" : [ {"Ref" : "RegisterEvents"}, {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }, {"Ref" : "WriteSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }, { "Ref" : "PublishSplitQueueTopic" }],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
@@ -251,6 +251,35 @@
         ]
       }
     },
+    "SplitQueueTopicPolicy": {
+      "Type": "AWS::SNS::TopicPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Id": "LambdaNotificationPolicy",
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowLambdaToPushNotificationEffect",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Action": "sns:Publish",
+              "Resource": "*",
+              "Condition":{
+                "StringEquals":{ "AWS:SourceAccount": {"Ref" : "AWS::AccountId" } } ,
+                "ArnLike": {"AWS:SourceArn": { "Fn::GetAtt": [ "runSplitQueue", "Arn" ]} }
+              }
+            }
+          ]
+        },
+        "Topics": [
+          {
+            "Ref": "SplitQueueTopic"
+          }
+        ]
+      }
+    },
     "ConfChangesTopic" : {
       "Type" : "AWS::SNS::Topic",
       "Properties" : {
@@ -266,6 +295,13 @@
           "Endpoint" : { "Fn::GetAtt": [ "splitFiles", "Arn" ]},
           "Protocol" : "lambda"
         }]
+      }
+    },
+    "SplitQueueTopic" : {
+      "Type" : "AWS::SNS::Topic",
+      "Properties" : {
+        "DisplayName" : "Events on the Split Queue",
+        "Subscription" : []
       }
     },
     "dataBucket": {
@@ -476,6 +512,26 @@
             ]
         }
       }
+    },
+    "PublishSplitQueueTopic" : {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "PublishSplitQueueTopic",
+        "PolicyDocument" : {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                  "Action" : [
+                      "sns:Publish"
+                  ],
+                  "Effect" : "Allow",
+                  "Resource" : [
+                      { "Ref" : "SplitQueueTopic" }
+                  ]
+                }
+            ]
+          }
+        }
     },
     "UpdateDataTableCapacity": {
       "Type": "AWS::IAM::ManagedPolicy",
