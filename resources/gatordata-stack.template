@@ -193,6 +193,35 @@
         "Comment" : "Scheduler for the runner to split files"
       }
     },
+    "UploadsChangesTopicPolicy": {
+      "Type": "AWS::SNS::TopicPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Id": "PushBucketNotificationPolicy",
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowBucketToPushNotificationEffect",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Action": "sns:Publish",
+              "Resource": "*",
+              "Condition":{
+                "StringEquals":{ "AWS:SourceAccount": {"Ref" : "AWS::AccountId" } } ,
+                "ArnLike": {"AWS:SourceArn": { "Fn::Join": ["", [ "arn:aws:s3:::",{ "Ref" : "AWS::StackName" }, "-gator"]]}}
+              }
+            }
+          ]
+        },
+        "Topics": [
+          {
+            "Ref": "UploadsChangesTopic"
+          }
+        ]
+      }
+    },
     "ConfChangesTopicPolicy": {
       "Type": "AWS::SNS::TopicPolicy",
       "Properties": {
@@ -229,21 +258,31 @@
         "Subscription" : []
       }
     },
+    "UploadsChangesTopic" : {
+      "Type" : "AWS::SNS::Topic",
+      "Properties" : {
+        "DisplayName" : "Uploaded files changes",
+        "Subscription" : [{
+          "Endpoint" : { "Fn::GetAtt": [ "splitFiles", "Arn" ]},
+          "Protocol" : "lambda"
+        }]
+      }
+    },
     "dataBucket": {
       "Type" : "AWS::S3::Bucket",
       "Properties" : {
         "BucketName" : {"Fn::Join": ["", [{ "Ref" : "AWS::StackName" }, "-gator"]] },
         "NotificationConfiguration" : {
-        "LambdaConfigurations" : [ {
+        "TopicConfigurations" : [
+        {
           "Event" : "s3:ObjectCreated:*",
           "Filter" : { "S3Key" : { "Rules" : [ {"Name" : "prefix", "Value" : "uploads/"} ] }},
-          "Function" : { "Fn::GetAtt": [ "splitFiles", "Arn" ]}
+          "Topic" : { "Ref" : "UploadsChangesTopic" }
         },{
           "Event" : "s3:ObjectRemoved:*",
           "Filter" : { "S3Key" : { "Rules" : [ {"Name" : "prefix", "Value" : "uploads/"} ] }},
-          "Function" : { "Fn::GetAtt": [ "splitFiles", "Arn" ]}
-        }],
-        "TopicConfigurations" : [ {
+          "Topic" : { "Ref" : "UploadsChangesTopic" }
+        },{
           "Event" : "s3:ObjectCreated:*",
           "Filter" : { "S3Key" : { "Rules" : [ {"Name" : "prefix", "Value" : "conf"} ] }},
           "Topic" : { "Ref" : "ConfChangesTopic" }
@@ -254,20 +293,15 @@
         }]
         }
       },
-      "DependsOn" : [ "splitFiles", "GatorUploadsPermission", "ConfChangesTopicPolicy" ]
+      "DependsOn" : [ "UploadsChangesTopicPolicy", "ConfChangesTopicPolicy" ]
     },
-    "GatorUploadsPermission": {
+    "SplitFilesUploadChangesPermission": {
         "Type" : "AWS::Lambda::Permission",
         "Properties" : {
             "Action":"lambda:invokeFunction",
             "FunctionName": { "Fn::GetAtt": [ "splitFiles", "Arn" ]},
-            "Principal": "s3.amazonaws.com",
-            "SourceAccount": {"Ref" : "AWS::AccountId" },
-            "SourceArn": {
-                "Fn::Join": ["", [
-                    "arn:aws:s3:::"
-                     ,{ "Ref" : "AWS::StackName" }, "-gator"]]
-            }
+            "Principal": "sns.amazonaws.com",
+            "SourceArn": { "Ref" : "UploadsChangesTopic" }
         },
         "DependsOn" : "splitFiles"
     },

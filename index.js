@@ -176,7 +176,7 @@ var append_dataset_to_list_dynamodb = function append_dataset_to_list_dynamodb(s
   params['ExpressionAttributeNames'] = {
     '#sets' : 'sets'
   };
-  console.log((remove ? "Adding " : "Removing "),set_id,"to list of sets");
+  console.log((remove ? "Removing" : "Adding"),set_id,"to list of sets");
   return dynamo.update(params).promise().then( () => console.log("Updated list of sets ",set_id));
 };
 
@@ -906,27 +906,39 @@ var readAllData = function readAllData(event,context) {
   });
 };
 
+const extract_changed_keys = function(event) {
+  if ( ! event.Records ) {
+    return [];
+  }
+  let results = event.Records
+  .filter( rec => rec.Sns )
+  .map( rec => {
+    let sns_message = JSON.parse(rec.Sns.Message);
+    return sns_message.Records.filter(sns_rec => sns_rec.s3 ).map( sns_rec => {
+      return { bucket : sns_rec.s3.bucket.name, key: sns_rec.s3.object.key, operation: sns_rec.eventName };
+    });
+  });
+  results = [].concat.apply([],results);
+  return results.filter( obj => obj.bucket == bucket_name );
+};
+
 var splitFiles = function splitFiles(event,context) {
-  var filekey = require('querystring').unescape(event.Records[0].s3.object.key);
-  var result_promise = Promise.resolve(true);
-  if (event.Records[0].eventName.match(/ObjectRemoved/)) {
-    console.log("Remove data at ",filekey);
-    result_promise = remove_data(filekey);
-  }
-  if (event.Records[0].eventName.match(/ObjectCreated/)) {
-    console.log("Splitting data at ",filekey);
-    let queue = new Queue(split_queue);
-    result_promise = queue.sendMessage({'path' : filekey });
-    // result_promise = get_current_md5(filekey)
-    // .then((md5) => split_file(filekey,null,md5))
-    // .then(function() {
-    //   uploader = null;
-    // });
-  }
-  result_promise.then(function(done) {
+  let changes = extract_changed_keys(event);
+  console.log("Changed files ",changes);
+  let queue = new Queue(split_queue);
+  let promises = changes.map( change => {
+    if (change.operation.match(/ObjectRemoved/)) {
+      console.log("Remove data at ",change.key);
+      return remove_data(change.key);
+    }
+    if (change.operation.match(/ObjectCreated/)) {
+      console.log("Splitting data at ",change.key);
+      return queue.sendMessage({'path' : change.key });
+    }
+  });
+  Promise.all(promises).then(function(done) {
     console.log("Processed all components");
     context.succeed('OK');
-    // Upload the metadata at the end of a successful decomposition
   }).catch(function(err) {
     console.error(err);
     console.error(err.stack);
