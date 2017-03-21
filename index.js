@@ -837,6 +837,7 @@ let stepSplitQueue = function(event,context) {
         console.log(err);
       }).then(function() {
         context.succeed({ status: 'unfinished',
+                          messageCount: 1,
                           message: {'path' : message_body.path,
                                     'offset' : last_item,
                                     'byte_offset' : current_byte_offset
