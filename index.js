@@ -750,6 +750,126 @@ let shutdown_split_queue = function() {
   });
 };
 
+let startSplitQueue = function(event,context) {
+  let count = 0;
+  let queue = new Queue(split_queue);
+  queue.getActiveMessages().then(function(counts) {
+    if (counts[0] > 0) {
+      throw new Error("Already running");
+    }
+    if (counts[1] < 1) {
+      throw new Error("No messages");
+    }
+    count = counts[1];
+  })
+  .then( () => console.log("Increasing capacity to ",Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
+  .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
+  .then( () => context.succeed({status: 'OK', messageCount: count }))
+  .catch(function(err) {
+    if (err.message == 'No messages') {
+      context.succeed({ status: 'OK', messageCount: 0 });
+      return;
+    }
+    if (err.message == 'Already running') {
+      context.fail({ status: 'running' });
+      return;
+    }
+    if (err.code !== 'ValidationException') {
+      context.fail({ status: err.message });
+      return;
+    }
+  });
+};
+
+let endSplitQueue = function(event,context) {
+  set_write_capacity(MIN_WRITE_CAPACITY)
+  .catch(function(err) {
+    if (err.code !== 'ValidationException') {
+      throw err;
+    }
+  }).then( () => {
+    context.succeed({status: 'OK'});
+  }).catch( err => {
+    context.fail({ status: err.message });
+  });
+};
+
+let stepSplitQueue = function(event,context) {
+
+  let queue = new Queue(split_queue);
+
+  console.log("Getting queue object");
+  let timelimit = null;
+  uploader = null;
+
+  let message_promise = queue.shift(1).then( messages => {
+    console.log("Got queue messages ",messages.map((message) => message.Body));
+    return messages;
+  });
+
+  return message_promise.then(function(messages) {
+    if ( ! messages || ! messages.length ) {
+      throw new Error('No messages');
+    }
+
+    let message = messages[0];
+    let message_body = message.Body ? JSON.parse(message.Body) : message;
+
+    timelimit = setTimeout(function() {
+      // Wait for any requests to finalise
+      // then look at the queue.
+      console.log("Ran out of time splitting file");
+      uploader.stop().then(function() {
+        let last_item = uploader.queue[0];
+        if (! last_item ) {
+          last_item = uploader.last_acc;
+        } else {
+          last_item = last_item.PutRequest.Item.acc;
+        }
+        console.log("First item on queue ",last_item );
+        let current_byte_offset = uploader.byte_offset.offset;
+        if (current_byte_offset < 0) {
+          current_byte_offset = 0;
+        }
+        return message.finalise();
+      }).catch(function(err) {
+        console.log(err.stack);
+        console.log(err);
+      }).then(function() {
+        context.succeed({ status: 'unfinished',
+                          message: {'path' : message_body.path,
+                                    'offset' : last_item,
+                                    'byte_offset' : current_byte_offset
+                                   }
+                        });
+      });
+    },(60*5 - 10)*1000);
+
+    let result = get_current_md5(message_body.path)
+    .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))
+    .then(function() {
+      uploader = null;
+      clearTimeout(timelimit);
+      return message.finalise().then( () => {
+        return queue.getActiveMessages()
+      }).then(function(counts) {
+        context.succeed({state: 'OK', messageCount: counts[1] })
+      });
+    });
+    return result;
+  }).catch(function(err) {
+    clearTimeout(timelimit);
+    uploader = null;
+    if (err.message == 'No messages') {
+      context.succeed({ status: 'OK', messageCount: 0 });
+      return;
+    }
+    console.log(err.stack);
+    console.log(err);
+    context.fail({state: err.message });
+  });
+};
+
 
 // Timings for runQueue
 
@@ -761,7 +881,7 @@ let shutdown_split_queue = function() {
 //     offset back onto the queue.
 //   - Discard item from the queue (unless there's an error, so put it back)
 
-var runSplitQueue = function(event,context) {
+var runSplitQueueMonolithic = function(event,context) {
 
   let queue = new Queue(split_queue);
 
@@ -981,7 +1101,11 @@ var refreshData = function() {
 
 exports.splitFiles = splitFiles;
 exports.readAllData = readAllData;
-exports.runSplitQueue = runSplitQueue;
+exports.runSplitQueue = runSplitQueueMonolithic;
+
+exports.startSplitQueue = startSplitQueue;
+exports.endSplitQueue = endSplitQueue;
+exports.stepSplitQueue = stepSplitQueue;
 
 exports.refreshData = refreshData;
 exports.refreshMetadata = refreshMetadata;

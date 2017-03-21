@@ -86,6 +86,72 @@
       },
       "DependsOn" : "LambdaRunSplitQueueRole"
     },
+    "startSplitQueue" : {
+      "Type" : "AWS::Lambda::Function",
+      "Properties" : {
+        "Code" : {
+          "ZipFile": { "Fn::Join": ["", [
+            "exports.startSplitQueue = function(event, context) {",
+            "  context.succeed('OK');",
+            "};"
+          ]]}
+        },
+        "Description" : "startSplitQueue",
+        "Handler" : "index.startSplitQueue",
+        "Environment" : { "Variables" : {
+          "DEFAULT_READ_CAPACITY" : {"Ref" : "DEFAULTREADCAPACITY"}
+        }},
+        "Role" : {"Fn::GetAtt" : ["LambdaStartSplitQueueRole", "Arn"] },
+        "Runtime" : "nodejs4.3",
+        "MemorySize" : 128,
+        "Timeout" : 60
+      },
+      "DependsOn" : "LambdaStartSplitQueueRole"
+    },
+    "stepSplitQueue" : {
+      "Type" : "AWS::Lambda::Function",
+      "Properties" : {
+        "Code" : {
+          "ZipFile": { "Fn::Join": ["", [
+            "exports.stepSplitQueue = function(event, context) {",
+            "  context.succeed('OK');",
+            "};"
+          ]]}
+        },
+        "Description" : "stepSplitQueue",
+        "Handler" : "index.stepSplitQueue",
+        "Environment" : { "Variables" : {
+          "DEFAULT_READ_CAPACITY" : {"Ref" : "DEFAULTREADCAPACITY"}
+        }},
+        "Role" : {"Fn::GetAtt" : ["LambdaStepSplitQueueRole", "Arn"] },
+        "Runtime" : "nodejs4.3",
+        "MemorySize" : 512,
+        "Timeout" : 300
+      },
+      "DependsOn" : "LambdaStepSplitQueueRole"
+    },
+    "endSplitQueue" : {
+      "Type" : "AWS::Lambda::Function",
+      "Properties" : {
+        "Code" : {
+          "ZipFile": { "Fn::Join": ["", [
+            "exports.endSplitQueue = function(event, context) {",
+            "  context.succeed('OK');",
+            "};"
+          ]]}
+        },
+        "Description" : "endSplitQueue",
+        "Handler" : "index.endSplitQueue",
+        "Environment" : { "Variables" : {
+          "DEFAULT_READ_CAPACITY" : {"Ref" : "DEFAULTREADCAPACITY"}
+        }},
+        "Role" : {"Fn::GetAtt" : ["LambdaEndSplitQueueRole", "Arn"] },
+        "Runtime" : "nodejs4.3",
+        "MemorySize" : 128,
+        "Timeout" : 60
+      },
+      "DependsOn" : "LambdaEndSplitQueueRole"
+    },
     "readAllData" : {
       "Type" : "AWS::Lambda::Function",
       "Properties" : {
@@ -127,6 +193,60 @@
       "Type": "AWS::IAM::Role",
       "Properties": {
         "ManagedPolicyArns" : [ {"Ref" : "RegisterEvents"}, {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }, {"Ref" : "WriteSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }, { "Ref" : "PublishSplitQueueTopic" }],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      }
+    },
+    "LambdaStartSplitQueueRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "ManagedPolicyArns" : [ {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" } ],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      }
+    },
+    "LambdaEndSplitQueueRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "ManagedPolicyArns" : [ {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+      }
+    },
+    "LambdaStepSplitQueueRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "ManagedPolicyArns" : [ {"Ref" : "ConsumeSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }, { "Ref" : "PublishSplitQueueTopic" }],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
@@ -269,6 +389,19 @@
               "Condition":{
                 "StringEquals":{ "AWS:SourceAccount": {"Ref" : "AWS::AccountId" } } ,
                 "ArnLike": {"AWS:SourceArn": { "Fn::GetAtt": [ "runSplitQueue", "Arn" ]} }
+              }
+            },
+            {
+              "Sid": "AllowLambdaToPushNotificationEffectStepSplitQueue",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Action": "sns:Publish",
+              "Resource": "*",
+              "Condition":{
+                "StringEquals":{ "AWS:SourceAccount": {"Ref" : "AWS::AccountId" } } ,
+                "ArnLike": {"AWS:SourceArn": { "Fn::GetAtt": [ "stepSplitQueue", "Arn" ]} }
               }
             }
           ]
