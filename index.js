@@ -763,7 +763,7 @@ let startSplitQueue = function(event,context) {
     count = counts[1];
   })
   .then( () => console.log("Increasing capacity to ",Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
-  .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
+  // .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
   .then( () => context.succeed({status: 'OK', messageCount: count }))
   .catch(function(err) {
     if (err.message == 'No messages') {

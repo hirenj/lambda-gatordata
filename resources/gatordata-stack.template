@@ -189,6 +189,64 @@
         }
       }
     },
+    "StateSplitQueueRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": {"Fn::Join": ["", [ "states.", { "Ref" : "AWS::Region" } , ".amazonaws.com" ]] }
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies" : [{
+            "PolicyName" : "AllowLambda",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                  {
+                    "Sid": "RegisterEvents",
+                    "Effect": "Allow",
+                    "Action": [ "lambda:InvokeFunction" ],
+                    "Resource" : [
+                      { "Fn::GetAtt": ["startSplitQueue", "Arn"] },
+                      { "Fn::GetAtt": ["stepSplitQueue", "Arn"] },
+                      { "Fn::GetAtt": ["endSplitQueue", "Arn"] }
+                    ]
+                  }
+              ]
+            }
+        }]
+      }
+    },
+    "StateSplitQueue": {
+      "Type": "AWS::StepFunctions::StateMachine",
+      "Properties": {
+        "DefinitionString": {
+           "Fn::Join": [
+              "\n",
+              [
+                 "{",
+                 "    \"StartAt\": \"HelloWorld\",",
+                 "    \"States\" : {",
+                 "        \"HelloWorld\" : {",
+                 "            \"Type\" : \"Task\", ",
+                 "            \"Resource\" : \"arn:aws:lambda:us-east-1:111122223333:function:HelloFunction\",",
+                 "            \"End\" : true",
+                 "        }",
+                 "    }",
+                 "}"
+              ]
+           ]
+        },
+        "RoleArn" : { "Fn::GetAtt": ["StateSplitQueueRole", "Arn"] }
+      }
+    },
     "LambdaRunSplitQueueRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
