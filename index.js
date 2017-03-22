@@ -763,7 +763,7 @@ let startSplitQueue = function(event,context) {
     count = counts[1];
   })
   .then( () => console.log("Increasing capacity to ",Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
-  // .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
+  .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
   .then( () => context.succeed({status: 'OK', messageCount: count }))
   .catch(function(err) {
     if (err.message == 'No messages') {
@@ -777,12 +777,15 @@ let startSplitQueue = function(event,context) {
     if (err.code !== 'ValidationException') {
       context.fail({ status: err.message });
       return;
+    } else {
+      context.succeed({ status: 'OK', messageCount: count })
     }
   });
 };
 
 let endSplitQueue = function(event,context) {
-  set_write_capacity(MIN_WRITE_CAPACITY)
+  // set_write_capacity(MIN_WRITE_CAPACITY)
+  Promise.resolve(true)
   .catch(function(err) {
     if (err.code !== 'ValidationException') {
       throw err;
@@ -801,11 +804,16 @@ let stepSplitQueue = function(event,context) {
   console.log("Getting queue object");
   let timelimit = null;
   uploader = null;
+  let message_promise = Promise.resolve([])
+  if (event.status && event.status == 'unfinished') {
+    message_promise = Promise.resolve([event.message]);
+  } else {
+    message_promise = queue.shift(1).then( messages => {
+      console.log("Got queue messages ",messages.map((message) => message.Body));
+      return messages;
+    });    
+  }
 
-  let message_promise = queue.shift(1).then( messages => {
-    console.log("Got queue messages ",messages.map((message) => message.Body));
-    return messages;
-  });
 
   return message_promise.then(function(messages) {
     if ( ! messages || ! messages.length ) {
@@ -831,11 +839,13 @@ let stepSplitQueue = function(event,context) {
         if (current_byte_offset < 0) {
           current_byte_offset = 0;
         }
+        console.log("Finalising message");
         return message.finalise();
       }).catch(function(err) {
         console.log(err.stack);
         console.log(err);
       }).then(function() {
+        console.log("Sending state");
         context.succeed({ status: 'unfinished',
                           messageCount: 1,
                           message: {'path' : message_body.path,
@@ -844,7 +854,7 @@ let stepSplitQueue = function(event,context) {
                                    }
                         });
       });
-    },(60*5 - 10)*1000);
+    },(60*1 - 10)*1000);
 
     let result = get_current_md5(message_body.path)
     .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))

@@ -592,7 +592,7 @@
               }
             ]
         },
-        "Roles" : [ { "Ref" : "LambdaSplitFilesRole" }, {"Ref" : "LambdaReadAllDataRole"}, {"Ref" : "LambdaRunSplitQueueRole"} ]
+        "Roles" : [ { "Ref" : "LambdaSplitFilesRole" }, {"Ref" : "LambdaReadAllDataRole"}, {"Ref" : "LambdaRunSplitQueueRole"},{"Ref" : "LambdaStartSplitQueueRole"},{"Ref" : "LambdaStepSplitQueueRole"},{"Ref" : "LambdaEndSplitQueueRole"} ]
       },
       "DependsOn" : ["LambdaSplitFilesRole","LambdaReadAllDataRole","LambdaRunSplitQueueRole"]
     },
