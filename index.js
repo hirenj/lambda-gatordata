@@ -230,9 +230,7 @@ var upload_data_record_db = function upload_data_record_db(key,data,offset,byte_
     uploader.start();
   }
 
-  return uploader.finished.promise.then(function() {
-    uploader = null;
-  });
+  return uploader.finished.promise;
 };
 
 var upload_data_record_s3 = function upload_data_record_s3(key,data) {
@@ -394,6 +392,8 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
       reject(err);
     });
   }).catch(function(err) {
+    console.log("Removing uploader in error handler");
+    uploader = null;
     if (err.statusCode == 304) {
       entry_data.end();
       console.log("File not modified, skipping splitting");
@@ -402,7 +402,12 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
     } else {
       throw err;
     }
-  }).then(() => Promise.all(upload_promises)).then( () => "All upload promises resolved");
+  }).then(() => Promise.all(upload_promises))
+    .then(function() {
+      console.log("Removing uploader in split_file");
+      uploader = null;
+    })
+    .then( () => "All upload promises resolved");
 };
 
 var datasets_containing_acc = function(acc) {
@@ -804,7 +809,7 @@ let stepSplitQueue = function(event,context) {
   console.log("Getting queue object");
   let timelimit = null;
   uploader = null;
-  let message_promise = Promise.resolve([])
+  let message_promise = Promise.resolve([]);
   if (event.status && event.status == 'unfinished') {
     message_promise = Promise.resolve([event.message]);
   } else {
@@ -821,6 +826,11 @@ let stepSplitQueue = function(event,context) {
     }
 
     let message = messages[0];
+    if ( ! message.finalise ) {
+      message.finalise = function() {
+        return Promise.resolve();
+      };
+    }
     let message_body = message.Body ? JSON.parse(message.Body) : message;
     let last_item = null;
     let current_byte_offset = null;
@@ -847,6 +857,8 @@ let stepSplitQueue = function(event,context) {
         console.log(err.stack);
         console.log(err);
       }).then(function() {
+        console.log("Removing uploader after timeout");
+        uploader = null;
         console.log("Sending state");
         return context.succeed({ status: 'unfinished',
                           messageCount: 1,
@@ -865,8 +877,10 @@ let stepSplitQueue = function(event,context) {
     let result = get_current_md5(message_body.path)
     .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))
     .then(function() {
-      uploader = null;
+      console.log("Done uploading");
       clearTimeout(timelimit);
+      console.log("Removing uploader after finished");
+      uploader = null;
       return message.finalise().then( () => {
         return queue.getActiveMessages()
       }).then(function(counts) {
@@ -875,7 +889,9 @@ let stepSplitQueue = function(event,context) {
     });
     return result;
   }).catch(function(err) {
+    console.log("Hit an error",err);
     clearTimeout(timelimit);
+    console.log("Removing uploader in error handler");
     uploader = null;
     if (err.message == 'No messages') {
       context.succeed({ status: 'OK', messageCount: 0 });
