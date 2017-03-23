@@ -860,7 +860,7 @@ let stepSplitQueue = function(event,context) {
         console.log(err);
         context.fail({state: err.message });
       });
-    },(30*1 - 10)*1000);
+    },(60*5 - 10)*1000);
 
     let result = get_current_md5(message_body.path)
     .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))
