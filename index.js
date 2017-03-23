@@ -23,6 +23,7 @@ var metadata_table = 'test-datasets';
 var data_table = 'data';
 var split_queue = 'SplitQueue';
 var runSplitQueueRule = 'runSplitQueueRule';
+var split_queue_machine = 'StateSplitQueue';
 
 let config = {};
 
@@ -31,6 +32,7 @@ try {
     bucket_name = config.buckets.dataBucket;
     metadata_table = config.tables.datasets;
     data_table = config.tables.data;
+    split_queue_machine = config.stepfunctions.StateSplitQueue;
     split_queue = config.queue.SplitQueue;
     runSplitQueueRule = config.rule.runSplitQueueRule;
 } catch (e) {
@@ -44,6 +46,7 @@ if (config.region) {
 
 const s3 = new AWS.S3();
 const dynamo = new AWS.DynamoDB.DocumentClient();
+const stepfunctions = new AWS.StepFunctions();
 const all_sets = [];
 
 let datasetnames = Promise.resolve();
@@ -176,7 +179,7 @@ var append_dataset_to_list_dynamodb = function append_dataset_to_list_dynamodb(s
   params['ExpressionAttributeNames'] = {
     '#sets' : 'sets'
   };
-  console.log((remove ? "Adding " : "Removing "),set_id,"to list of sets");
+  console.log((remove ? "Removing" : "Adding"),set_id,"to list of sets");
   return dynamo.update(params).promise().then( () => console.log("Updated list of sets ",set_id));
 };
 
@@ -230,9 +233,7 @@ var upload_data_record_db = function upload_data_record_db(key,data,offset,byte_
     uploader.start();
   }
 
-  return uploader.finished.promise.then(function() {
-    uploader = null;
-  });
+  return uploader.finished.promise;
 };
 
 var upload_data_record_s3 = function upload_data_record_s3(key,data) {
@@ -394,6 +395,8 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
       reject(err);
     });
   }).catch(function(err) {
+    console.log("Removing uploader in error handler");
+    uploader = null;
     if (err.statusCode == 304) {
       entry_data.end();
       console.log("File not modified, skipping splitting");
@@ -402,7 +405,12 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
     } else {
       throw err;
     }
-  }).then(() => Promise.all(upload_promises)).then( () => "All upload promises resolved");
+  }).then(() => Promise.all(upload_promises))
+    .then(function() {
+      console.log("Removing uploader in split_file");
+      uploader = null;
+    })
+    .then( () => "All upload promises resolved");
 };
 
 var datasets_containing_acc = function(acc) {
@@ -709,44 +717,150 @@ let set_write_capacity = function(capacity) {
   return dynamo_client.updateTable(params).promise();
 };
 
-
-let reset_split_queue = function(queue,arn) {
-  return queue.getActiveMessages().then(function(counts) {
+let startSplitQueue = function(event,context) {
+  let count = 0;
+  let queue = new Queue(split_queue);
+  queue.getActiveMessages().then(function(counts) {
     if (counts[0] > 0) {
       throw new Error("Already running");
     }
     if (counts[1] < 1) {
       throw new Error("No messages");
     }
+    count = counts[1];
   })
   .then( () => console.log("Increasing capacity to ",Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
   .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
+  .then( () => context.succeed({status: 'OK', messageCount: count }))
   .catch(function(err) {
     if (err.message == 'No messages') {
-      return shutdown_split_queue().then(function() {
-        throw err;
-      });
+      context.succeed({ status: 'OK', messageCount: 0 });
+      return;
+    }
+    if (err.message == 'Already running') {
+      context.fail({ status: 'running' });
+      return;
     }
     if (err.code !== 'ValidationException') {
-      throw err;
+      context.fail({ status: err.message });
+      return;
+    } else {
+      context.succeed({ status: 'OK', messageCount: count })
     }
-  })
-  .then( () => Events.setTimeout(runSplitQueueRule,new Date(new Date().getTime() + 2*60*1000)) )
-  .catch(function(err) {
-    console.log(err);
   });
 };
 
-let shutdown_split_queue = function() {
-  console.log("Reducing capacity down to ",MIN_WRITE_CAPACITY);
-  return set_write_capacity(MIN_WRITE_CAPACITY)
+let endSplitQueue = function(event,context) {
+  set_write_capacity(MIN_WRITE_CAPACITY)
   .catch(function(err) {
     if (err.code !== 'ValidationException') {
       throw err;
     }
-  }).then(function() {
-    console.log("Clearing event rule");
-    return Events.setTimeout(runSplitQueueRule,new Date(new Date().getTime() - 60*1000));
+  }).then( () => {
+    context.succeed({status: 'OK'});
+  }).catch( err => {
+    context.fail({ status: err.message });
+  });
+};
+
+let stepSplitQueue = function(event,context) {
+
+  let queue = new Queue(split_queue);
+
+  console.log("Getting queue object");
+  let timelimit = null;
+  uploader = null;
+  let message_promise = Promise.resolve([]);
+  if (event.status && event.status == 'unfinished') {
+    message_promise = Promise.resolve([event.message]);
+  } else {
+    message_promise = queue.shift(1).then( messages => {
+      console.log("Got queue messages ",messages.map((message) => message.Body));
+      return messages;
+    });    
+  }
+
+
+  return message_promise.then(function(messages) {
+    if ( ! messages || ! messages.length ) {
+      throw new Error('No messages');
+    }
+
+    let message = messages[0];
+    if ( ! message.finalise ) {
+      message.finalise = function() {
+        return Promise.resolve();
+      };
+    }
+    let message_body = message.Body ? JSON.parse(message.Body) : message;
+    let last_item = null;
+    let current_byte_offset = null;
+
+    timelimit = setTimeout(function() {
+      // Wait for any requests to finalise
+      // then look at the queue.
+      console.log("Ran out of time splitting file");
+      uploader.stop().then(function() {
+        last_item = uploader.queue[0];
+        if (! last_item ) {
+          last_item = uploader.last_acc;
+        } else {
+          last_item = last_item.PutRequest.Item.acc;
+        }
+        console.log("First item on queue ",last_item );
+        current_byte_offset = uploader.byte_offset.offset;
+        if (current_byte_offset < 0) {
+          current_byte_offset = 0;
+        }
+        console.log("Finalising message");
+        return message.finalise();
+      }).catch(function(err) {
+        console.log(err.stack);
+        console.log(err);
+      }).then(function() {
+        console.log("Removing uploader after timeout");
+        uploader = null;
+        console.log("Sending state");
+        return context.succeed({ status: 'unfinished',
+                          messageCount: 1,
+                          message: {'path' : message_body.path,
+                                    'offset' : last_item,
+                                    'byte_offset' : current_byte_offset
+                                   }
+                        });
+      }).catch(function(err) {
+        console.log(err.stack);
+        console.log(err);
+        context.fail({state: err.message });
+      });
+    },(60*5 - 10)*1000);
+
+    let result = get_current_md5(message_body.path)
+    .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))
+    .then(function() {
+      console.log("Done uploading");
+      clearTimeout(timelimit);
+      console.log("Removing uploader after finished");
+      uploader = null;
+      return message.finalise().then( () => {
+        return queue.getActiveMessages()
+      }).then(function(counts) {
+        context.succeed({state: 'OK', messageCount: counts[1] })
+      });
+    });
+    return result;
+  }).catch(function(err) {
+    console.log("Hit an error",err);
+    clearTimeout(timelimit);
+    console.log("Removing uploader in error handler");
+    uploader = null;
+    if (err.message == 'No messages') {
+      context.succeed({ status: 'OK', messageCount: 0 });
+      return;
+    }
+    console.log(err.stack);
+    console.log(err);
+    context.fail({state: err.message });
   });
 };
 
@@ -754,95 +868,17 @@ let shutdown_split_queue = function() {
 // Timings for runQueue
 
 // Run runQueue every 8 hours
-//   Always setTimeout(5 mins) (from start of execution)
-//   - On empty queue setTimeout(+ 8 hours)
-//   - On early finish of upload, setTimeout(2 seconds) (from end of upload)
-//   - If it doesn't look like we will finish - pause execution, push the
-//     offset back onto the queue.
-//   - Discard item from the queue (unless there's an error, so put it back)
-
 var runSplitQueue = function(event,context) {
-
-  let queue = new Queue(split_queue);
-
-  if (! event.time ) {
-    console.log("Initialising scheduler");
-    Events.setInterval('scheduleSplitQueueRule','8 hours').then(function() {
-      context.succeed('OK');
-    });
-    return;
-  }
-
-  if (event.time && event.time == 'scheduled') {
-    reset_split_queue(queue,context.invokedFunctionArn).then(function() {
-      context.succeed('OK');
-    });
-    return;
-  }
-
-  console.log("Getting queue object");
-  let timelimit = null;
-  uploader = null;
-
-  // We should do a pre-emptive subscribe for the event here
-  console.log("Setting timeout for event");
-  let self_event = Events.setTimeout(runSplitQueueRule,new Date(new Date().getTime() + 6*60*1000));
-  return self_event.then(() => queue.shift(1)).then(function(messages) {
-    console.log("Got queue messages ",messages.map((message) => message.Body));
-    if ( ! messages || ! messages.length ) {
-      // Modify table, reducing write capacity
-      console.log("No more messages. Reducing capacity");
-      return shutdown_split_queue();
-    }
-
-    let message = messages[0];
-    let message_body = JSON.parse(message.Body);
-    // Modify table, increasing write capacity if needed
-
-    timelimit = setTimeout(function() {
-      // Wait for any requests to finalise
-      // then look at the queue.
-      console.log("Ran out of time splitting file");
-      uploader.stop().then(function() {
-        let last_item = uploader.queue[0];
-        if (! last_item ) {
-          last_item = uploader.last_acc;
-        } else {
-          last_item = last_item.PutRequest.Item.acc;
-        }
-        console.log("First item on queue ",last_item );
-        let current_byte_offset = uploader.byte_offset.offset;
-        if (current_byte_offset < 0) {
-          current_byte_offset = 0;
-        }
-        return queue.sendMessage({'path' : message_body.path, 'offset' : last_item, 'byte_offset' : current_byte_offset });
-      }).catch(function(err) {
-        console.log(err.stack);
-        console.log(err);
-      }).then(function() {
-        uploader = null;
-        return message.finalise();
-      });
-    },(60*5 - 10)*1000);
-
-    let result = get_current_md5(message_body.path)
-    .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))
-    .then(function() {
-      uploader = null;
-      clearTimeout(timelimit);
-      console.log("Finished reading file, calling runSplitQueue immediately, will run again at ",new Date(new Date().getTime() + 2*60*1000));
-      return message.finalise().then( () => Events.setTimeout(runSplitQueueRule,new Date(new Date().getTime() + 2*60*1000)));
-    });
-    return result;
-  }).then(function(ok) {
-    clearTimeout(timelimit);
-    context.succeed('OK');
-  }).catch(function(err) {
-    clearTimeout(timelimit);
-    uploader = null;
-    console.log(err.stack);
+  let params = {
+    stateMachineArn: split_queue_machine,
+    input: '{}',
+    name: ('SplitQueue '+(new Date()).toString()).replace(/[^A-Za-z0-9]/g,'_')
+  };
+  stepfunctions.startExecution(params).promise().then( () => {
+    context.succeed({'status' : 'OK'});
+  }).catch( err => {
     console.log(err);
-    context.succeed('NOT-OK');
+    context.fail({'status' : err.message });
   });
 };
 
@@ -906,27 +942,39 @@ var readAllData = function readAllData(event,context) {
   });
 };
 
+const extract_changed_keys = function(event) {
+  if ( ! event.Records ) {
+    return [];
+  }
+  let results = event.Records
+  .filter( rec => rec.Sns )
+  .map( rec => {
+    let sns_message = JSON.parse(rec.Sns.Message);
+    return sns_message.Records.filter(sns_rec => sns_rec.s3 ).map( sns_rec => {
+      return { bucket : sns_rec.s3.bucket.name, key: sns_rec.s3.object.key, operation: sns_rec.eventName };
+    });
+  });
+  results = [].concat.apply([],results);
+  return results.filter( obj => obj.bucket == bucket_name );
+};
+
 var splitFiles = function splitFiles(event,context) {
-  var filekey = require('querystring').unescape(event.Records[0].s3.object.key);
-  var result_promise = Promise.resolve(true);
-  if (event.Records[0].eventName.match(/ObjectRemoved/)) {
-    console.log("Remove data at ",filekey);
-    result_promise = remove_data(filekey);
-  }
-  if (event.Records[0].eventName.match(/ObjectCreated/)) {
-    console.log("Splitting data at ",filekey);
-    let queue = new Queue(split_queue);
-    result_promise = queue.sendMessage({'path' : filekey });
-    // result_promise = get_current_md5(filekey)
-    // .then((md5) => split_file(filekey,null,md5))
-    // .then(function() {
-    //   uploader = null;
-    // });
-  }
-  result_promise.then(function(done) {
+  let changes = extract_changed_keys(event);
+  console.log("Changed files ",changes);
+  let queue = new Queue(split_queue);
+  let promises = changes.map( change => {
+    if (change.operation.match(/ObjectRemoved/)) {
+      console.log("Remove data at ",change.key);
+      return remove_data(change.key);
+    }
+    if (change.operation.match(/ObjectCreated/)) {
+      console.log("Splitting data at ",change.key);
+      return queue.sendMessage({'path' : change.key });
+    }
+  });
+  Promise.all(promises).then(function(done) {
     console.log("Processed all components");
     context.succeed('OK');
-    // Upload the metadata at the end of a successful decomposition
   }).catch(function(err) {
     console.error(err);
     console.error(err.stack);
@@ -970,6 +1018,10 @@ var refreshData = function() {
 exports.splitFiles = splitFiles;
 exports.readAllData = readAllData;
 exports.runSplitQueue = runSplitQueue;
+
+exports.startSplitQueue = startSplitQueue;
+exports.endSplitQueue = endSplitQueue;
+exports.stepSplitQueue = stepSplitQueue;
 
 exports.refreshData = refreshData;
 exports.refreshMetadata = refreshMetadata;
