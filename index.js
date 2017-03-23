@@ -822,13 +822,14 @@ let stepSplitQueue = function(event,context) {
 
     let message = messages[0];
     let message_body = message.Body ? JSON.parse(message.Body) : message;
+    let last_item = null;
 
     timelimit = setTimeout(function() {
       // Wait for any requests to finalise
       // then look at the queue.
       console.log("Ran out of time splitting file");
       uploader.stop().then(function() {
-        let last_item = uploader.queue[0];
+        last_item = uploader.queue[0];
         if (! last_item ) {
           last_item = uploader.last_acc;
         } else {
@@ -846,15 +847,19 @@ let stepSplitQueue = function(event,context) {
         console.log(err);
       }).then(function() {
         console.log("Sending state");
-        context.succeed({ status: 'unfinished',
+        return context.succeed({ status: 'unfinished',
                           messageCount: 1,
                           message: {'path' : message_body.path,
                                     'offset' : last_item,
                                     'byte_offset' : current_byte_offset
                                    }
                         });
+      }).catch(function(err) {
+        console.log(err.stack);
+        console.log(err);
+        context.fail({state: err.message });
       });
-    },(60*1 - 10)*1000);
+    },(30*1 - 10)*1000);
 
     let result = get_current_md5(message_body.path)
     .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))
