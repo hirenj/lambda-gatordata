@@ -823,6 +823,7 @@ let stepSplitQueue = function(event,context) {
     let message = messages[0];
     let message_body = message.Body ? JSON.parse(message.Body) : message;
     let last_item = null;
+    let current_byte_offset = null;
 
     timelimit = setTimeout(function() {
       // Wait for any requests to finalise
@@ -836,7 +837,7 @@ let stepSplitQueue = function(event,context) {
           last_item = last_item.PutRequest.Item.acc;
         }
         console.log("First item on queue ",last_item );
-        let current_byte_offset = uploader.byte_offset.offset;
+        current_byte_offset = uploader.byte_offset.offset;
         if (current_byte_offset < 0) {
           current_byte_offset = 0;
         }
