@@ -23,6 +23,7 @@ var metadata_table = 'test-datasets';
 var data_table = 'data';
 var split_queue = 'SplitQueue';
 var runSplitQueueRule = 'runSplitQueueRule';
+var split_queue_machine = 'StateSplitQueue';
 
 let config = {};
 
@@ -31,6 +32,7 @@ try {
     bucket_name = config.buckets.dataBucket;
     metadata_table = config.tables.datasets;
     data_table = config.tables.data;
+    split_queue_machine = config.stepfunctions.StateSplitQueue;
     split_queue = config.queue.SplitQueue;
     runSplitQueueRule = config.rule.runSplitQueueRule;
 } catch (e) {
@@ -44,6 +46,7 @@ if (config.region) {
 
 const s3 = new AWS.S3();
 const dynamo = new AWS.DynamoDB.DocumentClient();
+const stepfunctions = new AWS.StepFunctions();
 const all_sets = [];
 
 let datasetnames = Promise.resolve();
@@ -714,47 +717,6 @@ let set_write_capacity = function(capacity) {
   return dynamo_client.updateTable(params).promise();
 };
 
-
-let reset_split_queue = function(queue,arn) {
-  return queue.getActiveMessages().then(function(counts) {
-    if (counts[0] > 0) {
-      throw new Error("Already running");
-    }
-    if (counts[1] < 1) {
-      throw new Error("No messages");
-    }
-  })
-  .then( () => console.log("Increasing capacity to ",Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
-  .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
-  .catch(function(err) {
-    if (err.message == 'No messages') {
-      return shutdown_split_queue().then(function() {
-        throw err;
-      });
-    }
-    if (err.code !== 'ValidationException') {
-      throw err;
-    }
-  })
-  .then( () => Events.setTimeout(runSplitQueueRule,new Date(new Date().getTime() + 2*60*1000)) )
-  .catch(function(err) {
-    console.log(err);
-  });
-};
-
-let shutdown_split_queue = function() {
-  console.log("Reducing capacity down to ",MIN_WRITE_CAPACITY);
-  return set_write_capacity(MIN_WRITE_CAPACITY)
-  .catch(function(err) {
-    if (err.code !== 'ValidationException') {
-      throw err;
-    }
-  }).then(function() {
-    console.log("Clearing event rule");
-    return Events.setTimeout(runSplitQueueRule,new Date(new Date().getTime() - 60*1000));
-  });
-};
-
 let startSplitQueue = function(event,context) {
   let count = 0;
   let queue = new Queue(split_queue);
@@ -906,95 +868,17 @@ let stepSplitQueue = function(event,context) {
 // Timings for runQueue
 
 // Run runQueue every 8 hours
-//   Always setTimeout(5 mins) (from start of execution)
-//   - On empty queue setTimeout(+ 8 hours)
-//   - On early finish of upload, setTimeout(2 seconds) (from end of upload)
-//   - If it doesn't look like we will finish - pause execution, push the
-//     offset back onto the queue.
-//   - Discard item from the queue (unless there's an error, so put it back)
-
-var runSplitQueueMonolithic = function(event,context) {
-
-  let queue = new Queue(split_queue);
-
-  if (! event.time ) {
-    console.log("Initialising scheduler");
-    Events.setInterval('scheduleSplitQueueRule','8 hours').then(function() {
-      context.succeed('OK');
-    });
-    return;
-  }
-
-  if (event.time && event.time == 'scheduled') {
-    reset_split_queue(queue,context.invokedFunctionArn).then(function() {
-      context.succeed('OK');
-    });
-    return;
-  }
-
-  console.log("Getting queue object");
-  let timelimit = null;
-  uploader = null;
-
-  // We should do a pre-emptive subscribe for the event here
-  console.log("Setting timeout for event");
-  let self_event = Events.setTimeout(runSplitQueueRule,new Date(new Date().getTime() + 6*60*1000));
-  return self_event.then(() => queue.shift(1)).then(function(messages) {
-    console.log("Got queue messages ",messages.map((message) => message.Body));
-    if ( ! messages || ! messages.length ) {
-      // Modify table, reducing write capacity
-      console.log("No more messages. Reducing capacity");
-      return shutdown_split_queue();
-    }
-
-    let message = messages[0];
-    let message_body = JSON.parse(message.Body);
-    // Modify table, increasing write capacity if needed
-
-    timelimit = setTimeout(function() {
-      // Wait for any requests to finalise
-      // then look at the queue.
-      console.log("Ran out of time splitting file");
-      uploader.stop().then(function() {
-        let last_item = uploader.queue[0];
-        if (! last_item ) {
-          last_item = uploader.last_acc;
-        } else {
-          last_item = last_item.PutRequest.Item.acc;
-        }
-        console.log("First item on queue ",last_item );
-        let current_byte_offset = uploader.byte_offset.offset;
-        if (current_byte_offset < 0) {
-          current_byte_offset = 0;
-        }
-        return queue.sendMessage({'path' : message_body.path, 'offset' : last_item, 'byte_offset' : current_byte_offset });
-      }).catch(function(err) {
-        console.log(err.stack);
-        console.log(err);
-      }).then(function() {
-        uploader = null;
-        return message.finalise();
-      });
-    },(60*5 - 10)*1000);
-
-    let result = get_current_md5(message_body.path)
-    .then((md5) => split_file(message_body.path,null,message_body.offset === 'dummy' ? '0' : md5,message_body.offset,message_body.byte_offset))
-    .then(function() {
-      uploader = null;
-      clearTimeout(timelimit);
-      console.log("Finished reading file, calling runSplitQueue immediately, will run again at ",new Date(new Date().getTime() + 2*60*1000));
-      return message.finalise().then( () => Events.setTimeout(runSplitQueueRule,new Date(new Date().getTime() + 2*60*1000)));
-    });
-    return result;
-  }).then(function(ok) {
-    clearTimeout(timelimit);
-    context.succeed('OK');
-  }).catch(function(err) {
-    clearTimeout(timelimit);
-    uploader = null;
-    console.log(err.stack);
+var runSplitQueue = function(event,context) {
+  let params = {
+    stateMachineArn: split_queue_machine,
+    input: '{}',
+    name: ('SplitQueue '+(new Date()).toString()).replace(/[^A-Za-z0-9]/g,'_')
+  };
+  stepfunctions.startExecution(params).promise().then( () => {
+    context.succeed({'status' : 'OK'});
+  }).catch( err => {
     console.log(err);
-    context.succeed('NOT-OK');
+    context.fail({'status' : err.message });
   });
 };
 
@@ -1133,7 +1017,7 @@ var refreshData = function() {
 
 exports.splitFiles = splitFiles;
 exports.readAllData = readAllData;
-exports.runSplitQueue = runSplitQueueMonolithic;
+exports.runSplitQueue = runSplitQueue;
 
 exports.startSplitQueue = startSplitQueue;
 exports.endSplitQueue = endSplitQueue;

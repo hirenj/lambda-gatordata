@@ -81,8 +81,8 @@
         }},
         "Role" : {"Fn::GetAtt" : ["LambdaRunSplitQueueRole", "Arn"] },
         "Runtime" : "nodejs4.3",
-        "MemorySize" : 512,
-        "Timeout" : 300
+        "MemorySize" : 128,
+        "Timeout" : 60
       },
       "DependsOn" : "LambdaRunSplitQueueRole"
     },
@@ -261,7 +261,21 @@
                  "        \"stepSplitQueue\" : {",
                  "            \"Type\" : \"Task\", ",
                  { "Fn::Join": ["",["            \"Resource\" : \"",{ "Fn::GetAtt": ["stepSplitQueue", "Arn"] },"\","]] },
-                 "            \"Next\" : \"QueueChoice\"",
+                 "            \"Next\" : \"QueueChoice\",",
+                 "            \"Catch\": [ {",
+                 "               \"ErrorEquals\": [\"States.ALL\"],",
+                 "               \"Next\": \"endSplitQueue\"",
+                 "            } ],",
+                 "            \"Retry\" : [",
+                 "              {",
+                 "                \"ErrorEquals\": [ \"States.Timeout\" ],",
+                 "                \"MaxAttempts\": 0",
+                 "              },",
+                 "              {",
+                 "                \"ErrorEquals\": [ \"States.ALL\" ],",
+                 "                \"MaxAttempts\": 1",
+                 "              }",
+                 "            ]",
                  "        },",
                  "        \"endSplitQueue\" : {",
                  "            \"Type\" : \"Task\", ",
@@ -289,7 +303,7 @@
     "LambdaRunSplitQueueRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
-        "ManagedPolicyArns" : [ {"Ref" : "RegisterEvents"}, {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }, {"Ref" : "WriteSplitQueue" }, { "Ref" : "ReadUploaded" },{ "Ref" : "ReadDatasets" },{ "Ref" : "WriteDatasets" }, { "Ref" : "PublishSplitQueueTopic" }],
+        "ManagedPolicyArns" : [ {"Ref" : "StartExecutionStateSplitQueue"}],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
@@ -358,20 +372,6 @@
         }
       }
     },
-    "runSplitQueueRule": {
-      "Type": "AWS::Events::Rule",
-      "Properties": {
-        "Name" : { "Fn::Join": [ "" , ["runSplitQueueRule", "-", { "Ref" : "AWS::StackName" } ]]},
-        "Description": "runSplitQueue triggering event",
-        "ScheduleExpression": "cron(1 1 1 1 ? 2000)",
-        "State": "ENABLED",
-        "Targets": [{
-          "Arn": { "Fn::GetAtt": ["runSplitQueue", "Arn"] },
-          "Id": "runSplitQueue",
-          "Input" : "{ \"time\": \"triggered\" }"
-        }]
-      }
-    },
     "scheduleSplitQueueRule": {
       "Type": "AWS::Events::Rule",
       "Properties": {
@@ -384,18 +384,6 @@
           "Id": "runSplitQueue",
           "Input" : "{ \"time\": \"scheduled\" }"
         }]
-      }
-    },
-    "LambdaRunSplitQueueInvokeSplitQueuePermission": {
-      "Type": "AWS::Lambda::Permission",
-      "Properties": {
-        "FunctionName" : { "Fn::GetAtt" : ["runSplitQueue", "Arn"] },
-        "Action": "lambda:InvokeFunction",
-        "Principal": "events.amazonaws.com",
-        "SourceArn" : {"Fn::Join": ["", [ "arn:aws:events:", { "Ref" : "AWS::Region" } , ":",{"Ref" : "AWS::AccountId" },":", "rule/runSplitQueueRule", "-", {"Ref" : "AWS::StackName" }]] }
-      },
-      "Metadata" : {
-        "Comment" : "Scheduler for the runner to split files"
       }
     },
     "LambdaRunSplitQueueInvokeScheduleSplitQueuePermission": {
@@ -475,19 +463,6 @@
           "Id": "LambdaNotificationPolicy",
           "Version": "2012-10-17",
           "Statement": [
-            {
-              "Sid": "AllowLambdaToPushNotificationEffect",
-              "Effect": "Allow",
-              "Principal": {
-                "AWS": "*"
-              },
-              "Action": "sns:Publish",
-              "Resource": "*",
-              "Condition":{
-                "StringEquals":{ "AWS:SourceAccount": {"Ref" : "AWS::AccountId" } } ,
-                "ArnLike": {"AWS:SourceArn": { "Fn::GetAtt": [ "runSplitQueue", "Arn" ]} }
-              }
-            },
             {
               "Sid": "AllowLambdaToPushNotificationEffectStepSplitQueue",
               "Effect": "Allow",
@@ -763,6 +738,26 @@
           }
         }
     },
+    "StartExecutionStateSplitQueue" : {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties" : {
+        "Description" : "StartExecutionStateSplitQueue",
+        "PolicyDocument" : {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "states:StartExecution"
+                  ],
+                  "Resource": [
+                    {"Ref" : "StateSplitQueue" }
+                  ]
+                }
+            ]
+          }
+        }
+    },
     "UpdateDataTableCapacity": {
       "Type": "AWS::IAM::ManagedPolicy",
       "Properties" : {
@@ -779,26 +774,6 @@
             }
           ]
         }
-      }
-    },
-    "RegisterEvents": {
-      "Type": "AWS::IAM::ManagedPolicy",
-      "Properties" : {
-        "Description" : "RegisterEvents",
-        "PolicyDocument" : {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                  "Sid": "RegisterEvents",
-                  "Effect": "Allow",
-                  "Action": [ "events:PutRule", "events:DescribeRule" ],
-                  "Resource" : {"Fn::Join": ["", [ "arn:aws:events", ":", { "Ref" : "AWS::Region" } , ":",{"Ref" : "AWS::AccountId" }, ":","rule/runSplitQueueRule", "-", { "Ref" : "AWS::StackName" } ]] }
-                }
-            ]
-        }
-      },
-      "Metadata" : {
-        "break_circular" : { "Properties.PolicyDocument.Statement": [] }
       }
     }
   },
