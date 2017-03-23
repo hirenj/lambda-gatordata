@@ -789,8 +789,7 @@ let startSplitQueue = function(event,context) {
 };
 
 let endSplitQueue = function(event,context) {
-  // set_write_capacity(MIN_WRITE_CAPACITY)
-  Promise.resolve(true)
+  set_write_capacity(MIN_WRITE_CAPACITY)
   .catch(function(err) {
     if (err.code !== 'ValidationException') {
       throw err;
