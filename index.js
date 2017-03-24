@@ -397,7 +397,11 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
   }).catch(function(err) {
     console.log("Removing uploader in error handler");
     uploader = null;
-    if (err.statusCode == 304) {
+    if (err.statusCode == 404) {
+      entry_data.end();
+      console.log("File no longer exists, skipping splitting");
+      upload_promises.length = 0;
+    } else if (err.statusCode == 304) {
       entry_data.end();
       console.log("File not modified, skipping splitting");
       upload_promises.length = 0;
@@ -777,7 +781,7 @@ let stepSplitQueue = function(event,context) {
     message_promise = queue.shift(1).then( messages => {
       console.log("Got queue messages ",messages.map((message) => message.Body));
       return messages;
-    });    
+    });
   }
 
 
