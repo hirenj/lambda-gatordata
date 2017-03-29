@@ -203,7 +203,27 @@ var append_doi_dynamodb = function append_doi_dynamodb(set_id,doi) {
   return dynamo.update(params).promise();
 };
 
+var update_metadata = function(metadata) {
+  if (! metadata.sample) {
+    return Promise.resolve();
+  }
+  if (metadata.sample.tissue) {
+    const converter = require('node-uberon-mappings');
+    return converter.convert( metadata.sample.tissue ).then( converted => {
+      if ( ! converted.root ) {
+        return;
+      }
+      metadata.sample.uberon = converted.root;
+      metadata.sample.description = converted.name;
+    });
+  }
+  return Promise.resolve();
+};
+
 var upload_metadata_dynamodb = function(set,group,meta) {
+  if (meta.metadata) {
+    return update_metadata(meta.metadata).then( () => upload_metadata_dynamodb_from_db(set,group,meta) );
+  }
   return upload_metadata_dynamodb_from_db(set,group,meta);
 };
 
