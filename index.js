@@ -24,6 +24,7 @@ var data_table = 'data';
 var split_queue = 'SplitQueue';
 var runSplitQueueRule = 'runSplitQueueRule';
 var split_queue_machine = 'StateSplitQueue';
+var split_queue_topic = 'splitQueueTopic';
 
 let config = {};
 
@@ -35,6 +36,7 @@ try {
     split_queue_machine = config.stepfunctions.StateSplitQueue;
     split_queue = config.queue.SplitQueue;
     runSplitQueueRule = config.rule.runSplitQueueRule;
+    split_queue_topic = config.queue.SplitQueueTopic;
 } catch (e) {
 }
 
@@ -46,6 +48,7 @@ if (config.region) {
 
 const s3 = new AWS.S3();
 const dynamo = new AWS.DynamoDB.DocumentClient();
+const sns = require('lambda-helpers').sns;
 const stepfunctions = new AWS.StepFunctions();
 const all_sets = [];
 
@@ -131,7 +134,9 @@ var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db
     let metadata = options.metadata || {};
     metadata.mimetype = metadata.mimetype || 'application/json';
     metadata.title = metadata.title || 'Untitled';
-    doi_promise = append_doi_dynamodb(set_id,metadata.doi);
+    let notify_promise = sns.publish({topic: split_queue_topic, 'Message' : JSON.stringify({Bucket: bucket_name, Key: 'uploads/'+set_id+'/'+group_id }) });
+    let append_doi_promise = append_doi_dynamodb(set_id,metadata.doi);
+    doi_promise = Promise.all([notify_promise,append_doi_promise]);
 
     fix_empty_strings(metadata);
 
