@@ -49,6 +49,11 @@ const dynamo = new AWS.DynamoDB.DocumentClient();
 const stepfunctions = new AWS.StepFunctions();
 const all_sets = [];
 
+// We wish to lazily load the metadataConverter whenever we
+// are splitting files, so we only require the
+// module from within the split_files method
+let metadataConverter = null;
+
 let datasetnames = Promise.resolve();
 
 if (USE_BATCH_RETRIEVE) {
@@ -208,8 +213,7 @@ var update_metadata = function(metadata) {
     return Promise.resolve();
   }
   if (metadata.sample.tissue) {
-    const converter = require('node-uberon-mappings');
-    return converter.convert( metadata.sample.tissue ).then( converted => {
+    return metadataConverter.convert( metadata.sample.tissue ).then( converted => {
       if ( ! converted.root ) {
         return;
       }
@@ -363,6 +367,8 @@ var remove_data = function remove_data(filekey) {
 };
 
 var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte_offset) {
+  metadataConverter = require('node-uberon-mappings');
+
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
