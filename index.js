@@ -597,9 +597,10 @@ var download_all_data_db_query = function(accession,grants,dataset) {
     },
     ExpressionAttributeNames: {
       '#sample': 'sample',
-      '#title' : 'title'
+      '#title' : 'title',
+      '#rdata' : 'rdata_file'
     },
-    ProjectionExpression : 'acc,dataset,group_ids,metadata.mimetype,metadata.#sample,metadata.#title'
+    ProjectionExpression : 'acc,dataset,group_ids,metadata.mimetype,metadata.#sample,metadata.#title,#rdata'
   };
   if (dataset) {
     params.KeyConditionExpression = 'acc = :acc and dataset = :dataset';
@@ -643,6 +644,7 @@ var filter_db_datasets = function(grants,data) {
     return data.acc == 'metadata';
   }).forEach(function(set) {
     metadatas[set.dataset] = set.metadata;
+    (metadatas[set.dataset] || {}).rpackage = set.rdata_file;
     sets = sets.concat((set.group_ids || {'values':[]}).values.map(function(group) { return { group_id: group, id: set.dataset }; }));
   });
   console.log("Metadatas for data is ",JSON.stringify(metadatas),JSON.stringify(sets));
