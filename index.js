@@ -737,7 +737,7 @@ var combine_sets = function(entries) {
   if ( ! entries || ! entries.map ) {
     return entries;
   }
-  var results = {"data" : []};
+  var results = {"data" : [], "retrieved" : new Date().toISOString()};
   results.data = entries.map(function(entry) { return entry; });
   return results;
 };
