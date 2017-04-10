@@ -513,6 +513,15 @@
       "Type" : "AWS::S3::Bucket",
       "Properties" : {
         "BucketName" : {"Fn::Join": ["", [{ "Ref" : "AWS::StackName" }, "-gator"]] },
+        "LifecycleConfiguration" : {
+          "Rules" : [
+          {
+            "ExpirationInDays" : 2,
+            "Status": "Enabled",
+            "Prefix" : "sessions/"
+          }
+          ]
+        },
         "NotificationConfiguration" : {
         "TopicConfigurations" : [
         {
