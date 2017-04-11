@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "JSONStream": "^1.1.1",
-    "node-uberon-mappings": "hirenj/node-uberon-mappings",
     "lambda-helpers": "hirenj/lambda-helpers"
   }
 }

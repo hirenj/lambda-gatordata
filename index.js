@@ -9,7 +9,6 @@ const zlib = require('zlib');
 const Queue = require('lambda-helpers').queue;
 const Events = require('lambda-helpers').events;
 
-const MetadataExtractor = require('./dynamodb_rate').MetadataExtractor;
 const Offsetter = require('./dynamodb_rate').Offsetter;
 
 const MIN_WRITE_CAPACITY = 1;
@@ -51,11 +50,6 @@ const dynamo = new AWS.DynamoDB.DocumentClient();
 const sns = require('lambda-helpers').sns;
 const stepfunctions = new AWS.StepFunctions();
 const all_sets = [];
-
-// We wish to lazily load the metadataConverter whenever we
-// are splitting files, so we only require the
-// module from within the split_files method
-let metadataConverter = null;
 
 let datasetnames = Promise.resolve();
 
@@ -213,26 +207,8 @@ var append_doi_dynamodb = function append_doi_dynamodb(set_id,doi) {
   return dynamo.update(params).promise();
 };
 
-var update_metadata = function(metadata) {
-  if (! metadata.sample) {
-    return Promise.resolve();
-  }
-  if (metadata.sample.tissue) {
-    return metadataConverter.convert( metadata.sample.tissue ).then( converted => {
-      if ( ! converted.root ) {
-        return;
-      }
-      metadata.sample.uberon = converted.root;
-      metadata.sample.description = converted.name;
-    });
-  }
-  return Promise.resolve();
-};
 
 var upload_metadata_dynamodb = function(set,group,meta) {
-  if (meta.metadata) {
-    return update_metadata(meta.metadata).then( () => upload_metadata_dynamodb_from_db(set,group,meta) );
-  }
   return upload_metadata_dynamodb_from_db(set,group,meta);
 };
 
@@ -372,8 +348,6 @@ var remove_data = function remove_data(filekey) {
 };
 
 var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte_offset) {
-  metadataConverter = require('node-uberon-mappings');
-
   var filekey_components = filekey.split('/');
   var group_id = filekey_components[2];
   var dataset_id = filekey_components[1];
