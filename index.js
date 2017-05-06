@@ -63,6 +63,20 @@ if (USE_BATCH_RETRIEVE) {
   });
 }
 
+const fetch_query = function(params) {
+  let results = [];
+  let result_handler = items => {
+    results = results.concat(items.Items);
+    if (items.LastEvaluatedKey) {
+      params.ExclusiveStartKey = items.LastEvaluatedKey;
+      return dynamo.query(params).promise().then(result_handler);
+    } else {
+      return { Items: results };
+    }
+  };
+  return dynamo.query(params).promise().then( result_handler );
+};
+
 const onlyUnique = function(value, index, self) {
     return self.indexOf(value) === index;
 };
@@ -567,6 +581,7 @@ var download_all_data_db_query = function(accession,grants,dataset) {
   var params_metadata = {
     TableName: data_table,
     KeyConditionExpression: 'acc = :acc',
+    FilterExpression: 'attribute_exists(group_ids)',
     ExpressionAttributeValues: {
       ':acc': 'metadata'
     },
@@ -584,11 +599,11 @@ var download_all_data_db_query = function(accession,grants,dataset) {
     params_metadata.ExpressionAttributeValues[':dataset'] = dataset;
   }
   if ( ! metadata_promise && ! dataset ) {
-    metadata_promise = dynamo.query(params_metadata).promise();
+    metadata_promise = fetch_query(params_metadata);
   }
   return Promise.all([
-    dynamo.query(params).promise(),
-    dataset ? dynamo.query(params_metadata).promise() : metadata_promise
+    fetch_query(params),
+    dataset ? fetch_query(params_metadata) : metadata_promise
   ]).then(function(data) {
     console.timeEnd('download_all_data_db_query');
     var meta_data = data[1];
