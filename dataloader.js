@@ -649,6 +649,12 @@ var refreshData = function() {
   });
 };
 
+exports.runSplitQueue = runSplitQueue;
+
+exports.startSplitQueue = startSplitQueue;
+exports.endSplitQueue = endSplitQueue;
+exports.stepSplitQueue = stepSplitQueue;
+
 exports.refreshData = refreshData;
 exports.refreshMetadata = refreshMetadata;
 exports.splitFiles = splitFiles;
