@@ -21,6 +21,9 @@ if (config.region) {
   require('lambda-helpers').AWS.setRegion(config.region);
 }
 
+const dataloader = require('./dataloader');
+const getdata = require('./getdata_dynamodb');
+
 var get_homologues = function(accession) {
   return download_all_data(accession,{'homology/homology': ['*']},'homology')
          .then(function(homologues) {
@@ -36,10 +39,8 @@ var get_homologues = function(accession) {
          });
 };
 
-var metadata_promise;
-
 var download_all_data = function(accession,grants,dataset) {
-  return download_all_data_db(accession,grants,dataset);
+  return getdata.download_all_data(accession,grants,dataset);
 };
 
 var combine_sets = function(entries) {
@@ -83,7 +84,7 @@ var readAllData = function readAllData(event,context) {
   let entries_promise = Promise.resolve([]);
 
   if (event.homology) {
-    entries_promise = datasetnames.then( () => get_homologues(accession)).then(function(homologue_data) {
+    entries_promise = getdata.datasetnames.then( () => get_homologues(accession)).then(function(homologue_data) {
       console.time('homology');
       let homologues = homologue_data.homology;
       let alignments = homologue_data.alignments;
@@ -93,7 +94,7 @@ var readAllData = function readAllData(event,context) {
     .then( (entrysets) => entrysets.reduce( (a,b) => a.concat(b) ) );
   } else {
     console.time('download_all_data')
-    entries_promise = datasetnames.then( () => download_all_data(accession,grants,dataset)).then(function(entries) {
+    entries_promise = getdata.datasetnames.then( () => download_all_data(accession,grants,dataset)).then(function(entries) {
       console.timeEnd('download_all_data')
       console.time('combine_sets');
       return entries;
@@ -112,3 +113,13 @@ var readAllData = function readAllData(event,context) {
 };
 
 exports.readAllData = readAllData;
+
+exports.runSplitQueue = dataloader.runSplitQueue;
+
+exports.startSplitQueue = dataloader.startSplitQueue;
+exports.endSplitQueue = dataloader.endSplitQueue;
+exports.stepSplitQueue = dataloader.stepSplitQueue;
+
+exports.refreshData = dataloader.refreshData;
+exports.refreshMetadata = dataloader.refreshMetadata;
+exports.splitFiles = dataloader.splitFiles;

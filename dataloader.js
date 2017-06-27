@@ -16,12 +16,12 @@ const MIN_WRITE_CAPACITY = 1;
 const MAX_WRITE_CAPACITY = 200;
 const DEFAULT_READ_CAPACITY = process.env.DEFAULT_READ_CAPACITY ? process.env.DEFAULT_READ_CAPACITY : 1;
 
-var bucket_name = 'test-gator';
-var data_table = 'data';
-var split_queue = 'SplitQueue';
-var runSplitQueueRule = 'runSplitQueueRule';
-var split_queue_machine = 'StateSplitQueue';
-var split_queue_topic = 'splitQueueTopic';
+let bucket_name = 'test-gator';
+let data_table = 'data';
+let split_queue = 'SplitQueue';
+let runSplitQueueRule = 'runSplitQueueRule';
+let split_queue_machine = 'StateSplitQueue';
+let split_queue_topic = 'splitQueueTopic';
 
 let config = {};
 
@@ -48,11 +48,11 @@ const sns = require('lambda-helpers').sns;
 const stepfunctions = new AWS.StepFunctions();
 
 
-var get_current_md5 = function get_current_md5(filekey) {
-  var filekey_components = filekey.split('/');
-  var group_id = filekey_components[2];
-  var dataset_id = filekey_components[1];
-  var params_metadata = {
+const get_current_md5 = function get_current_md5(filekey) {
+  let filekey_components = filekey.split('/');
+  let group_id = filekey_components[2];
+  let dataset_id = filekey_components[1];
+  let params_metadata = {
     TableName: data_table,
     KeyConditionExpression: 'acc = :acc and dataset = :dataset',
     ExpressionAttributeValues: {
@@ -65,7 +65,7 @@ var get_current_md5 = function get_current_md5(filekey) {
   });
 };
 
-var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,options) {
+const upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3(set,group,options) {
   return dynamo.put({'TableName' : metadata_table, 'Item' : {
     'accessions' : options.accessions,
     'id' : set,
@@ -73,7 +73,7 @@ var upload_metadata_dynamodb_from_s3 = function upload_metadata_dynamodb_from_s3
   }}).promise();
 };
 
-var fix_empty_strings = function(meta) {
+const fix_empty_strings = function(meta) {
   if (Array.isArray(meta)) {
     meta.forEach(function(val,idx) {
       if (val === '' || val === null) {
@@ -97,12 +97,12 @@ var fix_empty_strings = function(meta) {
   });
 };
 
-var upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,options) {
+const upload_metadata_dynamodb_from_db = function upload_metadata_dynamodb_from_db(set_id,group_id,options) {
   if (options.remove) {
     // Don't need to remove the group id as it's already deleted
     return Promise.resolve(true);
   }
-  var params;
+  let params;
   let doi_promise = Promise.resolve();
   let dataset_promise = append_dataset_to_list_dynamodb(group_id+'/'+set_id);
 

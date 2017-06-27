@@ -3,11 +3,29 @@
 
 const USE_BATCH_RETRIEVE = process.env.ENABLE_BATCH_RETRIEVE ? true : false;
 
+const zlib = require('zlib');
+
+let bucket_name = 'test-gator';
+let data_table = 'data';
+
+let config = {};
+
+try {
+    config = require('./resources.conf.json');
+    bucket_name = config.buckets.dataBucket;
+    data_table = config.tables.data;
+} catch (e) {
+}
+
+const AWS = require('lambda-helpers').AWS;
+
 const dynamo = new AWS.DynamoDB.DocumentClient();
 
 const all_sets = [];
 
 let datasetnames = Promise.resolve();
+
+let metadata_promise = null;
 
 const onlyUnique = function(value, index, self) {
     return self.indexOf(value) === index;
@@ -232,3 +250,6 @@ var filter_db_datasets = function(grants,data) {
   console.log("We allowed ",valid_data.length," entries ");
   return valid_data;
 };
+
+exports.download_all_data = download_all_data_db;
+exports.datasetnames = datasetnames;
