@@ -23,6 +23,8 @@ const onlyUnique = function(value, index, self) {
 
 const dynamo = new AWS.DynamoDB.DocumentClient();
 
+const rateLimit = require('rate-limit-promise');
+
 let last_scan_key = null;
 let current_scan_key = null;
 let current_dataset = null;
@@ -77,6 +79,8 @@ const get_datasets_to_remove = function() {
   });
 };
 
+const limiter = rateLimit(4, 1000);
+
 const delete_items = function(items) {
   if (items.length == 0) {
     return Promise.resolve(null);
@@ -86,8 +90,10 @@ const delete_items = function(items) {
                 };
   //console.log('Doing delete request with',items.length,'items for dataset ',items.map( item => item.dataset ).filter(onlyUnique));
   params.RequestItems[data_table] = items.map( item => { return { DeleteRequest: { Key: item } } });
-  return dynamo.batchWrite(params).promise();
-}
+  return limiter().then( () => dynamo.batchWrite(params).promise());
+};
+
+
 
 const handle_delete = function(items_to_delete,result) {
   if ( ! result ) {
