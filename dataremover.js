@@ -73,7 +73,7 @@ const get_datasets_to_remove = function() {
 
   };
   return dynamo.query(params).promise().then(function(data) {
-    return (data.Items && data.Items.length > 0) ? data.Items.map( item => item.dataset ) : null;
+    return (data.Items && data.Items.length > 0) ? data.Items.map( item => item.dataset ) : [];
   });
 };
 
@@ -160,6 +160,9 @@ const remove_single_set_metadata = function(dataset) {
 
 const remove_single_set = function(dataset) {
   current_dataset = dataset;
+  if ( ! dataset ) {
+    return;
+  }
   return remove_single_set_entries(dataset).then( remove_single_set_metadata.bind(null,dataset) );
 };
 
@@ -181,7 +184,6 @@ const remove_sets_with_timeout = function(last_status) {
 
   let timeout_promise = new TimeoutPromise( execution_timeout, (resolve,reject) => {
     deleter_promise = get_datasets_to_remove().then( sets => {
-      sets = ['glycodomain_glycodomain_9606','google-0By48KKDu9leCQnR5V0NMMkNPZ2s','google-0By48KKDu9leCY2J6NmozVEdMR2s','published-sitedata'].concat(sets);
       if (current_dataset) {
         sets = [current_dataset].concat(sets);
       }
