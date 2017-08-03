@@ -22,6 +22,7 @@ if (config.region) {
 }
 
 const dataloader = require('./dataloader');
+const dataremover = require('./dataremover');
 const getdata = require('./getdata_dynamodb');
 
 var get_homologues = function(accession) {
@@ -119,6 +120,8 @@ exports.runSplitQueue = dataloader.runSplitQueue;
 exports.startSplitQueue = dataloader.startSplitQueue;
 exports.endSplitQueue = dataloader.endSplitQueue;
 exports.stepSplitQueue = dataloader.stepSplitQueue;
+
+exports.datasetCleanup = dataremover.datasetCleanup;
 
 exports.refreshData = dataloader.refreshData;
 exports.refreshMetadata = dataloader.refreshMetadata;
