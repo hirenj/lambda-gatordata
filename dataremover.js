@@ -211,7 +211,4 @@ const datasetCleanup = function(event,context) {
   .catch( err => context.fail({status: err.message}));
 };
 
-datasetCleanup({ dataset: 'glycodomain_glycodomain_9606',
-  last_scan_key: { acc: 'm0r1a7', dataset: 'glycodomain_glycodomain_9606' } },{succeed: message => console.log(message), fail: message => console.log(message) });
-
 exports.datasetCleanup = datasetCleanup;
