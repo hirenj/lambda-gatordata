@@ -367,7 +367,7 @@
     "LambdaStartSplitQueueRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
-        "ManagedPolicyArns" : [ {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" } ],
+        "ManagedPolicyArns" : [ {"Ref" : "UpdateDataTableCapacity"}, {"Ref" : "ConsumeSplitQueue" }, {"Ref" : "ReadDatasets"} ],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [

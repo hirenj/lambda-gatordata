@@ -202,13 +202,14 @@ const remove_sets_with_timeout = function(last_status) {
     let current_status = {
       dataset: current_dataset,
       last_scan_key: last_scan_key,
-      message_count: 1
+      messageCount: 1,
+      status: 'RUNNING'
     };
     console.log("Waiting to wind up execution");
     return deleter_promise.catch( err => console.log(err) ).then(() => current_status);
   }).then( (status) => {
     console.log("Execution finished");
-    return status ? status : { status: 'OK'};
+    return status ? status : { status: 'OK', messageCount: 0 };
   });
 };
 
@@ -219,4 +220,5 @@ const datasetCleanup = function(event,context) {
   .catch( err => context.fail({status: err.message}));
 };
 
+exports.setsToRemove = get_datasets_to_remove;
 exports.datasetCleanup = datasetCleanup;

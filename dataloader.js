@@ -12,6 +12,8 @@ const Events = require('lambda-helpers').events;
 const MetadataExtractor = require('./dynamodb_rate').MetadataExtractor;
 const Offsetter = require('./dynamodb_rate').Offsetter;
 
+const dataremover = require('./dataremover');
+
 const MIN_WRITE_CAPACITY = 1;
 const MAX_WRITE_CAPACITY = 200;
 const DEFAULT_READ_CAPACITY = process.env.DEFAULT_READ_CAPACITY ? process.env.DEFAULT_READ_CAPACITY : 1;
@@ -46,6 +48,8 @@ const s3 = new AWS.S3();
 const dynamo = new AWS.DynamoDB.DocumentClient();
 const sns = require('lambda-helpers').sns;
 const stepfunctions = new AWS.StepFunctions();
+
+let read_capacity = 1;
 
 
 const get_current_md5 = function get_current_md5(filekey) {
@@ -401,10 +405,11 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
 };
 
 let set_write_capacity = function(capacity) {
+  let target_read_capacity = Math.max(read_capacity,DEFAULT_READ_CAPACITY);
   var params = {
     TableName: data_table,
     ProvisionedThroughput: {
-      ReadCapacityUnits: DEFAULT_READ_CAPACITY,
+      ReadCapacityUnits: target_read_capacity,
       WriteCapacityUnits: capacity
     }
   };
@@ -415,14 +420,21 @@ let set_write_capacity = function(capacity) {
 let startSplitQueue = function(event,context) {
   let count = 0;
   let queue = new Queue(split_queue);
-  queue.getActiveMessages().then(function(counts) {
+  Promise.all([ queue.getActiveMessages(), dataremover.setsToRemove() ]).then(function(messages) {
+    let counts = messages[0];
+    let sets_to_remove = messages[1];
+
+    if (sets_to_remove.length > 0) {
+      read_capacity = 25;
+    }
+
     if (counts[0] > 0) {
       throw new Error("Already running");
     }
-    if (counts[1] < 1) {
+    if (counts[1] < 1 && sets_to_remove.length < 1) {
       throw new Error("No messages");
     }
-    count = counts[1];
+    count = counts[1] + sets_to_remove.length;
   })
   .then( () => console.log("Increasing capacity to ",Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
   .then( () => set_write_capacity(Math.floor(3/4*MAX_WRITE_CAPACITY)+10))
