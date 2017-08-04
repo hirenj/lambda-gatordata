@@ -32,6 +32,8 @@ let timed_out = false;
 
 const execution_timeout = (4*60 + 45)*1000;
 
+const MAX_READ_CAPACITY = 100;
+
 const TimeoutPromise = function(ms, callback) {
   return new Promise(function(resolve, reject) {
     var self = this;
@@ -79,7 +81,8 @@ const get_datasets_to_remove = function() {
   });
 };
 
-const limiter = rateLimit(4, 1000);
+const write_limiter = rateLimit(4, 1000);
+let read_limiter = rateLimit(3,1000);
 
 const delete_items = function(items) {
   if (items.length == 0) {
@@ -90,7 +93,7 @@ const delete_items = function(items) {
                 };
   //console.log('Doing delete request with',items.length,'items for dataset ',items.map( item => item.dataset ).filter(onlyUnique));
   params.RequestItems[data_table] = items.map( item => { return { DeleteRequest: { Key: item } } });
-  return limiter().then( () => dynamo.batchWrite(params).promise());
+  return write_limiter().then( () => dynamo.batchWrite(params).promise());
 };
 
 
@@ -132,6 +135,12 @@ const remove_single_set_entries = function(dataset) {
       throw new Error('Timed out');
     }
     let items_to_delete = data.Items.map( item => { return { acc: item.acc, dataset: dataset }; } );
+    let new_rate_per_10s = Math.floor(10*MAX_READ_CAPACITY / data.ConsumedCapacity.CapacityUnits);
+    if (read_limiter.rate_per_10s !== new_rate_per_10s) {
+      console.log("Limiting to",new_rate_per_10s,"calls per 10 seconds");
+      read_limiter = rateLimit(new_rate_per_10s,10000);
+      read_limiter.rate_per_10s = new_rate_per_10s;
+    }
     // console.log('Scan / Read capacity',data.ConsumedCapacity.CapacityUnits);
     // console.log('Items returned after scan',data.Items.length);
 
@@ -143,7 +152,7 @@ const remove_single_set_entries = function(dataset) {
       params.ExclusiveStartKey = data.LastEvaluatedKey;
       last_scan_key = current_scan_key;
       current_scan_key = data.LastEvaluatedKey;
-      return delete_done.then(() => dynamo.scan(params).promise()).then(handle_scan);
+      return delete_done.then(() => read_limiter()).then(() => dynamo.scan(params).promise()).then(handle_scan);
     } else {
       last_scan_key = null;
       current_scan_key = null;
@@ -152,7 +161,7 @@ const remove_single_set_entries = function(dataset) {
     return delete_done;
   };
 
-  return dynamo.scan(params).promise().then(handle_scan);
+  return read_limiter().then( () => dynamo.scan(params).promise().then(handle_scan));
 };
 
 const remove_single_set_metadata = function(dataset) {
@@ -209,6 +218,7 @@ const remove_sets_with_timeout = function(last_status) {
     return deleter_promise.catch( err => console.log(err) ).then(() => current_status);
   }).then( (status) => {
     console.log("Execution finished");
+    timed_out = false;
     return status ? status : { status: 'OK', messageCount: 0 };
   });
 };
@@ -220,5 +230,6 @@ const datasetCleanup = function(event,context) {
   .catch( err => context.fail({status: err.message}));
 };
 
+exports.MAX_READ_CAPACITY = MAX_READ_CAPACITY;
 exports.setsToRemove = get_datasets_to_remove;
 exports.datasetCleanup = datasetCleanup;

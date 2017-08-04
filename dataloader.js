@@ -15,7 +15,7 @@ const Offsetter = require('./dynamodb_rate').Offsetter;
 const dataremover = require('./dataremover');
 
 const MIN_WRITE_CAPACITY = 1;
-const MAX_WRITE_CAPACITY = 200;
+const MAX_WRITE_CAPACITY = 180;
 const DEFAULT_READ_CAPACITY = process.env.DEFAULT_READ_CAPACITY ? process.env.DEFAULT_READ_CAPACITY : 1;
 
 let bucket_name = 'test-gator';
@@ -49,7 +49,7 @@ const dynamo = new AWS.DynamoDB.DocumentClient();
 const sns = require('lambda-helpers').sns;
 const stepfunctions = new AWS.StepFunctions();
 
-let read_capacity = 1;
+let read_capacity = 0;
 
 
 const get_current_md5 = function get_current_md5(filekey) {
@@ -405,7 +405,7 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
 };
 
 let set_write_capacity = function(capacity) {
-  let target_read_capacity = Math.max(read_capacity,DEFAULT_READ_CAPACITY);
+  let target_read_capacity = read_capacity + DEFAULT_READ_CAPACITY;
   var params = {
     TableName: data_table,
     ProvisionedThroughput: {
@@ -425,7 +425,7 @@ let startSplitQueue = function(event,context) {
     let sets_to_remove = messages[1];
 
     if (sets_to_remove.length > 0) {
-      read_capacity = 50;
+      read_capacity = dataremover.MAX_READ_CAPACITY;
     }
 
     if (counts[0] > 0) {
