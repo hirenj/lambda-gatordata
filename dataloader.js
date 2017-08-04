@@ -425,7 +425,7 @@ let startSplitQueue = function(event,context) {
     let sets_to_remove = messages[1];
 
     if (sets_to_remove.length > 0) {
-      read_capacity = 25;
+      read_capacity = 50;
     }
 
     if (counts[0] > 0) {
