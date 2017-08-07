@@ -16,7 +16,7 @@ const dataremover = require('./dataremover');
 
 const MIN_WRITE_CAPACITY = 1;
 const MAX_WRITE_CAPACITY = 180;
-const DEFAULT_READ_CAPACITY = process.env.DEFAULT_READ_CAPACITY ? process.env.DEFAULT_READ_CAPACITY : 1;
+const DEFAULT_READ_CAPACITY = process.env.DEFAULT_READ_CAPACITY ? +(process.env.DEFAULT_READ_CAPACITY) : 1;
 
 let bucket_name = 'test-gator';
 let data_table = 'data';
@@ -449,6 +449,7 @@ let startSplitQueue = function(event,context) {
       return;
     }
     if (err.code !== 'ValidationException') {
+      console.log("Could not perform operation, error",err.message);
       context.fail({ status: err.message });
       return;
     } else {
