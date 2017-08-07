@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "JSONStream": "^1.1.1",
-    "lambda-helpers": "hirenj/lambda-helpers"
+    "lambda-helpers": "hirenj/lambda-helpers",
+    "rate-limit-promise": "^1.0.2"
   }
 }
