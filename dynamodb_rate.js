@@ -183,6 +183,7 @@ const interval_uploader = function(uploader,data_table,queue) {
     let val = null;
     while(val = uploader.outdata.read()) {
       if (! val && ! uploader.outdata.readable ) {
+        console.log("No value to read and not readable");
         val = [].concat(uploader.outdata.queue);
         uploader.outdata.queue.length = 0;
       }
@@ -195,11 +196,16 @@ const interval_uploader = function(uploader,data_table,queue) {
         });
       }
       if (val && val.length == 0 && ! uploader.data.readable) {
+        console.log("Empty value from pipe");
         if (queue.length == 0) {
           console.log("Finishing uploader");
           uploader.finished.resolve();
         }
       }
+    }
+    if (! queue.length && ! uploader.data.readable) {
+      console.log("Finishing uploader outside of while");
+      uploader.finished.resolve();
     }
   }
 
