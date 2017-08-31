@@ -93,7 +93,7 @@ function Offsetter(offset,options) {
 inherits(Offsetter, Transform);
 
 Offsetter.prototype._transform = function _transform(obj, encoding, callback) {
-  this.offset = this.startOffset + (this.bytesConsumed || 0) - 1024*1024;
+  this.offset = this.startOffset + (this.bytesConsumed || 0) - 2*1024*1024;
   this.bytesConsumed = (this.bytesConsumed || 0) + obj.length;
   if (this.done) {
     this.push(obj);
@@ -121,6 +121,7 @@ function JSONtoDynamodb(set_id,offset,options) {
   options.objectMode = true;
   this.set_id = set_id;
   this.offset = offset;
+  console.log("Waiting for ID",this.offset,this.set_id,typeof this.offset);
   Transform.call(this, options);
 }
 
@@ -178,35 +179,45 @@ const interval_uploader = function(uploader,data_table,queue) {
 
   let result = [];
   if (queue.length == 0) {
-    let val = uploader.outdata.read();
-    if (! val && ! uploader.outdata.readable ) {
-      val = [].concat(uploader.outdata.queue);
-      uploader.outdata.queue.length = 0;
-    }
-    if (val) {
-      uploader.total = (uploader.total || 0 ) + val.length;
-      val.forEach(function(value) {
-        queue.push(value);
-        uploader.last_acc = value.PutRequest.Item.acc;
-      });
-    }
-    if (val && val.length == 0 && ! uploader.data.readable) {
-      if (queue.length == 0) {
-        console.log("Finishing uploader");
-        uploader.finished.resolve();
+    uploader.data.resume();
+    let val = null;
+    while(val = uploader.outdata.read()) {
+      if (! val && ! uploader.outdata.readable ) {
+        val = [].concat(uploader.outdata.queue);
+        uploader.outdata.queue.length = 0;
+      }
+      if (val) {
+        uploader.data.pause();
+        uploader.total = (uploader.total || 0 ) + val.length;
+        val.forEach(function(value) {
+          queue.push(value);
+          uploader.last_acc = value.PutRequest.Item.acc;
+        });
+      }
+      if (val && val.length == 0 && ! uploader.data.readable) {
+        if (queue.length == 0) {
+          console.log("Finishing uploader");
+          uploader.finished.resolve();
+        }
       }
     }
   }
 
   params.RequestItems[data_table] = [];
+  let seen_keys = [];
   while (queue.length > 0 && params.RequestItems[data_table].length < 25  && queue_size(params.RequestItems[data_table].concat(queue[0])) < uploader.maxTheoreticalCapacity()) {
     let next_item = queue.shift();
+    while (next_item && seen_keys.indexOf(next_item.PutRequest.Item.acc) >= 0) {
+      console.log("Skipping duplicate accession ",next_item.PutRequest.Item.acc);
+      next_item = queue.shift();
+    }
     while (next_item && JSON.stringify(next_item).length > Math.floor(0.8*uploader.maxTheoreticalCapacity()) ) {
       console.log("Size of data too big for ",next_item.PutRequest.Item.acc," skipping ",JSON.stringify(next_item).length);
       next_item = queue.shift();
     }
     if (next_item) {
       params.RequestItems[data_table].push( next_item );
+      seen_keys.push(next_item.PutRequest.Item.acc);
     }
   }
   let last_batch_size = queue_size(params.RequestItems[data_table]);
@@ -230,7 +241,7 @@ const interval_uploader = function(uploader,data_table,queue) {
         .reverse()
         .forEach((item) => queue.unshift(item));
     }).then(function() {
-      console.log("Wrote ",uploader.total - queue.length," entries so far");
+      console.log("Wrote ",uploader.total - queue.length," entries so far, queue length",queue.length);
     }).catch(function(err) {
       console.log(err.stack);
       console.log(err);
@@ -248,12 +259,13 @@ const interval_uploader = function(uploader,data_table,queue) {
   }
   if (uploader.running) {
     let timeout =  Math.floor(1000 * (item_count*1024*Math.ceil((last_batch_size / item_count) / 1024 )) / uploader.maxTheoreticalCapacity());
-    if (queue.length > 0) {
-      console.log("Working out rate, we think it should be ",timeout);
-    }
     if (isNaN(timeout)) {
       timeout = 1000;
     }
+    if (uploader.current_timeout !== timeout) {
+      console.log("Working out rate, we think it should be ",timeout);
+    }
+    uploader.current_timeout = timeout;
     setTimeout(interval_uploader.bind(null,uploader,data_table,queue),timeout);
   }
 };
@@ -294,6 +306,8 @@ class Uploader {
   }
   stop() {
     this.running = false;
+    console.log("Queue length at stop is ",this.queue.length);
+    console.log("Bytes consumed at stop is ",this.byte_offset.bytesConsumed);
     this.stopped = new TriggeredPromise();
     return this.stopped.promise;
   }
