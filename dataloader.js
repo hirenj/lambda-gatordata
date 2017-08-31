@@ -44,7 +44,7 @@ if (config.region) {
   require('lambda-helpers').AWS.setRegion(config.region);
 }
 
-const s3 = new AWS.S3();
+const s3 = new AWS.S3({httpOptions: { timeout: 300000 }});
 const dynamo = new AWS.DynamoDB.DocumentClient();
 const sns = require('lambda-helpers').sns;
 const stepfunctions = new AWS.StepFunctions();
