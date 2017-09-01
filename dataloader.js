@@ -406,6 +406,9 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
 
 let set_write_capacity = function(capacity) {
   let target_read_capacity = read_capacity + DEFAULT_READ_CAPACITY;
+  if ( ! target_read_capacity || isNaN(target_read_capacity) ) {
+    target_read_capacity = 1;
+  }
   var params = {
     TableName: data_table,
     ProvisionedThroughput: {
@@ -461,6 +464,8 @@ let startSplitQueue = function(event,context) {
 let endSplitQueue = function(event,context) {
   set_write_capacity(MIN_WRITE_CAPACITY)
   .catch(function(err) {
+    console.log(err.message);
+    console.log(err);
     if (err.code !== 'ValidationException') {
       throw err;
     }
