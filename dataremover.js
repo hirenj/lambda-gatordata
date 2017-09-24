@@ -85,7 +85,8 @@ const write_limiter = rateLimit(4, 1000);
 let read_limiter = rateLimit(3,1000);
 
 const delete_items = function(items) {
-  if (items.length == 0) {
+  if (! items || items.length == 0) {
+    console.log("Exiting delete items because we got no items");
     return Promise.resolve(null);
   }
   let params = { 'RequestItems' : {},
@@ -93,13 +94,18 @@ const delete_items = function(items) {
                 };
   console.log('Doing delete request with',items.length,'items for dataset ',items.map( item => item.dataset ).filter(onlyUnique));
   params.RequestItems[data_table] = items.map( item => { return { DeleteRequest: { Key: item } } });
-  return write_limiter().then( () => dynamo.batchWrite(params).promise());
+  console.log("Waiting to write delete request");
+  return write_limiter().then( () => {
+    console.log("Executing deletion");
+    return dynamo.batchWrite(params).promise();
+  });
 };
 
 
 
 const handle_delete = function(items_to_delete,result) {
   if ( ! result ) {
+    console.log("Exiting handle_delete because we got no result");
     return;
   }
   if (result.UnprocessedItems[data_table]) {
@@ -129,6 +135,7 @@ const remove_single_set_entries = function(dataset) {
   }
   console.log('Removing',dataset);
   let handle_scan = function(data) {
+    console.log("Handling scan results");
     if (timed_out) {
       timed_out = false;
       console.log("Stopping scan retrieval");
@@ -145,6 +152,7 @@ const remove_single_set_entries = function(dataset) {
     // console.log('Items returned after scan',data.Items.length);
 
     console.log('Need to remove',items_to_delete.length,'items from current scan on',dataset);
+    console.log("Sending delete request");
     let delete_done = delete_items(items_to_delete.splice(0,25)).then( handle_delete.bind(null,items_to_delete));
 
     // Push items to be deleted
@@ -152,7 +160,14 @@ const remove_single_set_entries = function(dataset) {
       params.ExclusiveStartKey = data.LastEvaluatedKey;
       last_scan_key = current_scan_key;
       current_scan_key = data.LastEvaluatedKey;
-      return delete_done.then(() => read_limiter()).then(() => dynamo.scan(params).promise()).then(handle_scan);
+      console.log("Performing a new scan");
+      return delete_done.then(() => {
+        console.log("Waiting for read limiter");
+        return read_limiter();
+      }).then(() => {
+        console.log("Performing scan");
+        return dynamo.scan(params).promise();
+      }).then(handle_scan);
     } else {
       last_scan_key = null;
       current_scan_key = null;
@@ -160,8 +175,8 @@ const remove_single_set_entries = function(dataset) {
 
     return delete_done;
   };
-
-  return read_limiter().then( () => dynamo.scan(params).promise().then(handle_scan));
+  console.log("Kicking off scans");
+  return read_limiter().then( () => dynamo.scan(params).promise() ).then(handle_scan);
 };
 
 const remove_single_set_metadata = function(dataset) {
