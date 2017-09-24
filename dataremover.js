@@ -91,7 +91,7 @@ const delete_items = function(items) {
   let params = { 'RequestItems' : {},
                   ReturnConsumedCapacity: 'TOTAL',
                 };
-  //console.log('Doing delete request with',items.length,'items for dataset ',items.map( item => item.dataset ).filter(onlyUnique));
+  console.log('Doing delete request with',items.length,'items for dataset ',items.map( item => item.dataset ).filter(onlyUnique));
   params.RequestItems[data_table] = items.map( item => { return { DeleteRequest: { Key: item } } });
   return write_limiter().then( () => dynamo.batchWrite(params).promise());
 };
@@ -187,6 +187,7 @@ const loop_promise = function(func,items) {
   if (items.length == 0) {
     return Promise.resolve();
   }
+  console.log("Loop promise, running func on first item from",items);
   return func(items.shift()).then(loop_promise.bind(null,func,items));
 };
 
@@ -207,6 +208,7 @@ const remove_sets_with_timeout = function(last_status) {
     deleter_promise.then(resolve).catch(reject);
   });
   return timeout_promise.catch( err => {
+    console.log("Timed out with error",err);
     timed_out = true;
     let current_status = {
       dataset: current_dataset,
@@ -225,9 +227,13 @@ const remove_sets_with_timeout = function(last_status) {
 
 const datasetCleanup = function(event,context) {
   remove_sets_with_timeout(event).then( message => {
+    console.log("Suceeding with",message);
     context.succeed(message);
   })
-  .catch( err => context.fail({status: err.message}));
+  .catch( err => {
+    console.log("Failed with",err);
+    context.fail({status: err.message});
+  });
 };
 
 exports.MAX_READ_CAPACITY = MAX_READ_CAPACITY;

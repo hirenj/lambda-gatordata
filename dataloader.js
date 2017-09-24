@@ -44,7 +44,7 @@ if (config.region) {
   require('lambda-helpers').AWS.setRegion(config.region);
 }
 
-const s3 = new AWS.S3({httpOptions: { timeout: 300000 }});
+const s3 = new AWS.S3({httpOptions: { timeout: 600000 }});
 const dynamo = new AWS.DynamoDB.DocumentClient();
 const sns = require('lambda-helpers').sns;
 const stepfunctions = new AWS.StepFunctions();
@@ -564,8 +564,12 @@ let stepSplitQueue = function(event,context) {
     return result;
   }).catch(function(err) {
     console.log("Hit an error",err);
-    clearTimeout(timelimit);
+    if (err.code == 'TimeoutError') {
+      console.log("We hit a TimeoutError from S3, but we will continue anyway and wait for function to end on its own");
+      return;
+    }
     console.log("Removing uploader in error handler");
+    clearTimeout(timelimit);
     uploader = null;
     if (err.message == 'No messages') {
       context.succeed({ status: 'OK', messageCount: 0 });
