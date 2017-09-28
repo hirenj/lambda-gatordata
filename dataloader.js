@@ -590,9 +590,19 @@ var runSplitQueue = function(event,context) {
     input: '{}',
     name: ('SplitQueue '+(new Date()).toString()).replace(/[^A-Za-z0-9]/g,'_')
   };
-  stepfunctions.startExecution(params).promise().then( () => {
+  stepfunctions.listExecutions({ stateMachineArn: split_queue_machine, statusFilter: 'RUNNING'}).promise().then( running => {
+    if (running.executions && running.executions.length > 0) {
+      throw new Error('Already running');
+    }
+  })
+  .then( () => stepfunctions.startExecution(params).promise())
+  .then( () => {
     context.succeed({'status' : 'OK'});
   }).catch( err => {
+    if (err.message === 'Already running') {
+      context.succeed({'status' : 'OK', 'message' : 'Skipping run because already running'});
+      return;
+    }
     console.log(err);
     context.fail({'status' : err.message });
   });

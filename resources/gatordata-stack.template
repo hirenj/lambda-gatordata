@@ -822,7 +822,8 @@
                 {
                   "Effect": "Allow",
                   "Action": [
-                    "states:StartExecution"
+                    "states:StartExecution",
+                    "states:ListExecutions"
                   ],
                   "Resource": [
                     {"Ref" : "StateSplitQueue" }
