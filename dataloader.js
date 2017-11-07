@@ -365,7 +365,7 @@ var split_file = function split_file(filekey,skip_remove,current_md5,offset,byte
     let metadata_uploaded = Promise.all([].concat(upload_promises)).then(function() {
       return upload_metadata_dynamodb(dataset_id,group_id,{'metadata': dat, 'md5' : md5_result.md5 });
     }).catch(function(err) {
-      console.log(err);
+      console.log("Error in uploader promise",err);
       throw err;
     });
     upload_promises.push(metadata_uploaded);
@@ -428,6 +428,7 @@ let startSplitQueue = function(event,context) {
     let sets_to_remove = messages[1];
 
     if (sets_to_remove.length > 0) {
+      console.log("Setting read capacity to",dataremover.MAX_READ_CAPACITY,"because we have",sets_to_remove.length,"sets to remove");
       read_capacity = dataremover.MAX_READ_CAPACITY;
     }
 
