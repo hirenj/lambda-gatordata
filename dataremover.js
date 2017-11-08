@@ -236,7 +236,9 @@ const remove_sets_with_timeout = function(last_status) {
       status: 'RUNNING'
     };
     console.log("Waiting to wind up execution");
-    return deleter_promise.catch( err => console.log(err) ).then(() => current_status);
+    return new TimeoutPromise( 5000, (resolve,reject) => {
+      deleter_promise.catch( err => console.log(err) ).then(resolve);
+    }).catch( err => console.log("Cleanup err",err) ).then(() => current_status);
   }).then( (status) => {
     console.log("Execution finished");
     timed_out = false;
