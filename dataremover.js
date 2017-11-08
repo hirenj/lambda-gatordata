@@ -30,7 +30,7 @@ let current_scan_key = null;
 let current_dataset = null;
 let timed_out = false;
 
-const execution_timeout = (4*60 + 45)*1000;
+const execution_timeout = (4*60 + 30)*1000;
 
 const MAX_READ_CAPACITY = 100;
 
@@ -163,11 +163,15 @@ const remove_single_set_entries = function(dataset) {
       console.log("Performing a new scan");
       return delete_done.then(() => {
         console.log("Waiting for read limiter");
-        return read_limiter();
+        return read_limiter().then( () => console.log("Ready to run"));
       }).then(() => {
         console.log("Performing scan");
         return dynamo.scan(params).promise();
-      }).then(handle_scan);
+      }).then(handle_scan)
+      .catch(err => {
+        console.log("Error during scan",err);
+        throw err;
+      });
     } else {
       last_scan_key = null;
       current_scan_key = null;
