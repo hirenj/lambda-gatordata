@@ -247,6 +247,12 @@ const remove_sets_with_timeout = function(last_status) {
 };
 
 const datasetCleanup = function(event,context) {
+
+  console.log("Dataset cleanup disabled until it is running faster");
+  context.succeed({status: 'OK', messageCount: 0 });
+
+  return;
+
   remove_sets_with_timeout(event).then( message => {
     console.log("Suceeding with",message);
     context.succeed(message);
