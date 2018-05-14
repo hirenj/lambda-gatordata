@@ -183,6 +183,10 @@ var download_all_data_db_query = function(accession,grants,dataset) {
     params_metadata.KeyConditionExpression = 'acc = :acc and dataset = :dataset';
     params.ExpressionAttributeValues[':dataset'] = dataset;
     params_metadata.ExpressionAttributeValues[':dataset'] = dataset;
+    if (accession === 'metadata') {
+      params.ProjectionExpression = 'acc,dataset,metadata';
+      delete params.ExpressionAttributeNames;
+    }
   }
   if ( ! metadata_promise && ! dataset ) {
     metadata_promise = fetch_query(params_metadata);
@@ -197,6 +201,9 @@ var download_all_data_db_query = function(accession,grants,dataset) {
     console.time('download_all_data_inflate');
     return Promise.all(db_data.Items.map(inflate_item)).then(function(items) {
       console.timeEnd('download_all_data_inflate');
+      for (let item of (meta_data.Items || [])) {
+        item.is_meta = true;
+      }
       return meta_data.Items.concat(items);
     });
   }).then(filter_db_datasets.bind(null,grants)).then(function(results) {
@@ -243,9 +250,9 @@ var filter_db_datasets = function(grants,data) {
   });
   console.log("Valid sets are ",valid_sets.join(','));
   console.log("Returned sets are ",data.map(function(dat) { return dat.dataset; }));
-  let valid_data = data.filter(function(dat) {
+  let valid_data = data.filter(function(dat,idx) {
     dat.metadata = metadatas[dat.dataset];
-    return dat.acc !== 'metadata' && valid_sets.indexOf(dat.dataset) >= 0;
+    return (! dat.is_meta ) && valid_sets.indexOf(dat.dataset) >= 0;
   });
   console.log("We allowed ",valid_data.length," entries ");
   return valid_data;
