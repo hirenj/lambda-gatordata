@@ -58,7 +58,7 @@
         "Description" : "splitFiles",
         "Handler" : "index.splitFiles",
         "Role" : {"Fn::GetAtt" : ["LambdaSplitFilesRole", "Arn"] },
-        "Runtime" : "nodejs4.3",
+        "Runtime" : "nodejs6.10",
         "MemorySize" : 256,
         "Timeout" : 300
       },
@@ -80,7 +80,7 @@
           "DEFAULT_READ_CAPACITY" : {"Ref" : "DEFAULTREADCAPACITY"}
         }},
         "Role" : {"Fn::GetAtt" : ["LambdaRunSplitQueueRole", "Arn"] },
-        "Runtime" : "nodejs4.3",
+        "Runtime" : "nodejs6.10",
         "MemorySize" : 128,
         "Timeout" : 60
       },
@@ -102,7 +102,7 @@
           "DEFAULT_READ_CAPACITY" : {"Ref" : "DEFAULTREADCAPACITY"}
         }},
         "Role" : {"Fn::GetAtt" : ["LambdaStartSplitQueueRole", "Arn"] },
-        "Runtime" : "nodejs4.3",
+        "Runtime" : "nodejs6.10",
         "MemorySize" : 128,
         "Timeout" : 60
       },
@@ -124,7 +124,7 @@
           "DEFAULT_READ_CAPACITY" : {"Ref" : "DEFAULTREADCAPACITY"}
         }},
         "Role" : {"Fn::GetAtt" : ["LambdaStepSplitQueueRole", "Arn"] },
-        "Runtime" : "nodejs4.3",
+        "Runtime" : "nodejs6.10",
         "MemorySize" : 512,
         "Timeout" : 300
       },
@@ -146,7 +146,7 @@
           "DEFAULT_READ_CAPACITY" : {"Ref" : "DEFAULTREADCAPACITY"}
         }},
         "Role" : {"Fn::GetAtt" : ["LambdaEndSplitQueueRole", "Arn"] },
-        "Runtime" : "nodejs4.3",
+        "Runtime" : "nodejs6.10",
         "MemorySize" : 128,
         "Timeout" : 60
       },
@@ -165,7 +165,7 @@
         "Description" : "datasetCleanup",
         "Handler" : "index.datasetCleanup",
         "Role" : {"Fn::GetAtt" : ["LambdaDatasetCleanupRole", "Arn"] },
-        "Runtime" : "nodejs4.3",
+        "Runtime" : "nodejs6.10",
         "MemorySize" : 512,
         "Timeout" : 300
       },
@@ -184,7 +184,7 @@
         "Description" : "readAllData",
         "Handler" : "index.readAllData",
         "Role" : {"Fn::GetAtt" : ["LambdaReadAllDataRole", "Arn"] },
-        "Runtime" : "nodejs4.3",
+        "Runtime" : "nodejs6.10",
         "MemorySize" : 1024,
         "Timeout" : 3
       },
