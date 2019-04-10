@@ -126,7 +126,7 @@
         "Role" : {"Fn::GetAtt" : ["LambdaStepSplitQueueRole", "Arn"] },
         "Runtime" : "nodejs8.10",
         "MemorySize" : 512,
-        "Timeout" : 300
+        "Timeout" : 900
       },
       "DependsOn" : "LambdaStepSplitQueueRole"
     },
