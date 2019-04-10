@@ -42,7 +42,7 @@
       "Type": "AWS::SQS::Queue",
       "Properties": {
         "QueueName": { "Fn::Join" :  [ "-", [ { "Ref" : "AWS::StackName" }, "SplitQueue" ] ] },
-        "VisibilityTimeout": "300"
+        "VisibilityTimeout": "900"
       }
     },
     "splitFiles" : {
