@@ -131,6 +131,7 @@ Resources:
         - !Ref 'ReadUploaded'
         - !Ref 'ReadDatasets'
         - !Ref 'WriteDatasets'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -215,6 +216,7 @@ Resources:
     Properties:
       ManagedPolicyArns:
         - !Ref 'StartExecutionStateSplitQueue'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -229,6 +231,7 @@ Resources:
         - !Ref 'UpdateDataTableCapacity'
         - !Ref 'ConsumeSplitQueue'
         - !Ref 'ReadDatasets'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -242,6 +245,7 @@ Resources:
       ManagedPolicyArns:
         - !Ref 'UpdateDataTableCapacity'
         - !Ref 'ConsumeSplitQueue'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -258,6 +262,7 @@ Resources:
         - !Ref 'ReadDatasets'
         - !Ref 'WriteDatasets'
         - !Ref 'PublishSplitQueueTopic'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -271,6 +276,7 @@ Resources:
       ManagedPolicyArns:
         - !Ref 'WriteDatasets'
         - !Ref 'ReadDatasets'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -430,6 +436,7 @@ Resources:
     Properties:
       ManagedPolicyArns:
         - !Ref 'ReadDatasets'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
