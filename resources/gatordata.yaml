@@ -448,31 +448,6 @@ Resources:
             Principal:
               Service: apigateway.amazonaws.com
             Action: sts:AssumeRole
-  GatordataLogWriterPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: GatordataLogWriterPolicy
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action:
-              - logs:CreateLogGroup
-              - logs:CreateLogStream
-              - logs:PutLogEvents
-            Resource: arn:aws:logs:*:*:*
-      Roles:
-        - !Ref 'LambdaSplitFilesRole'
-        - !Ref 'LambdaReadAllDataRole'
-        - !Ref 'LambdaRunSplitQueueRole'
-        - !Ref 'LambdaStartSplitQueueRole'
-        - !Ref 'LambdaStepSplitQueueRole'
-        - !Ref 'LambdaEndSplitQueueRole'
-        - !Ref 'LambdaDatasetCleanupRole'
-    DependsOn:
-      - LambdaSplitFilesRole
-      - LambdaReadAllDataRole
-      - LambdaRunSplitQueueRole
   ReadUploaded:
     Type: AWS::IAM::ManagedPolicy
     Properties:
