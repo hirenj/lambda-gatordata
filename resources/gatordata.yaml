@@ -385,6 +385,14 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${AWS::StackName}-gator'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - 'GET'
+            AllowedOrigins:
+              - '*'
       LifecycleConfiguration:
         Rules:
           - ExpirationInDays: 2
