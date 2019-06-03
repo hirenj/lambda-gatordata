@@ -491,6 +491,10 @@ Resources:
             Principal:
               Service: apigateway.amazonaws.com
             Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: appsync.amazonaws.com
+            Action: sts:AssumeRole
   ReadUploaded:
     Type: AWS::IAM::ManagedPolicy
     Properties:
