@@ -9,6 +9,7 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub '${AWS::StackName}-data'
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: acc
           AttributeType: S
@@ -19,9 +20,6 @@ Resources:
           KeyType: HASH
         - AttributeName: dataset
           KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: '4'
-        WriteCapacityUnits: '1'
   SplitQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -131,6 +129,7 @@ Resources:
         - !Ref 'ReadUploaded'
         - !Ref 'ReadDatasets'
         - !Ref 'WriteDatasets'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -165,56 +164,94 @@ Resources:
   StateSplitQueue:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      DefinitionString: !Sub
-        - "{\n    \"StartAt\": \"startSplitQueue\",\n    \"States\" : {\n        \"\
-          startSplitQueue\" : {\n            \"Type\" : \"Task\", \n${Param1}\n  \
-          \          \"Next\" : \"WaitChoice\"\n        },\n        \"WaitChoice\"\
-          \ : {\n            \"Type\" : \"Choice\", \n            \"Choices\" : [\
-          \ \n                { \"Variable\": \"$.messageCount\", \"NumericGreaterThan\"\
-          : 0, \"Next\": \"waitForCapacity\" }\n                          ],\n   \
-          \         \"Default\" : \"QueueChoice\"\n        },\n        \"waitForCapacity\"\
-          \ : {\n            \"Type\" : \"Wait\", \n            \"Seconds\" : 300,\
-          \ \n            \"Next\" : \"QueueChoice\"\n        },\n        \"QueueChoice\"\
-          \ : {\n            \"Type\" : \"Choice\", \n            \"Choices\" : [\
-          \ \n                { \"Variable\": \"$.messageCount\", \"NumericGreaterThan\"\
-          : 0, \"Next\": \"stepSplitQueue\" }\n                          ],\n    \
-          \        \"Default\" : \"datasetCleanup\"\n        },\n        \"stepSplitQueue\"\
-          \ : {\n            \"Type\" : \"Task\", \n${Param2}\n            \"Next\"\
-          \ : \"QueueChoice\",\n            \"Catch\": [ {\n               \"ErrorEquals\"\
-          : [\"States.ALL\"],\n               \"Next\": \"endSplitQueue\"\n      \
-          \      } ],\n            \"Retry\" : [\n              {\n              \
-          \  \"ErrorEquals\": [ \"States.Timeout\" ],\n                \"MaxAttempts\"\
-          : 0\n              },\n              {\n                \"ErrorEquals\"\
-          : [ \"States.ALL\" ],\n                \"MaxAttempts\": 1\n            \
-          \  }\n            ]\n        },\n        \"CleanupChoice\" : {\n       \
-          \     \"Type\" : \"Choice\", \n            \"Choices\" : [ \n          \
-          \      { \"Variable\": \"$.messageCount\", \"NumericGreaterThan\": 0, \"\
-          Next\": \"datasetCleanup\" }\n                          ],\n           \
-          \ \"Default\" : \"endSplitQueue\"\n        },\n        \"datasetCleanup\"\
-          \ : {\n            \"Type\" : \"Task\", \n${Param3}\n            \"Next\"\
-          \ : \"CleanupChoice\",\n            \"Catch\": [ {\n               \"ErrorEquals\"\
-          : [\"States.ALL\"],\n               \"Next\": \"endSplitQueue\"\n      \
-          \      } ],\n            \"Retry\" : [\n              {\n              \
-          \  \"ErrorEquals\": [ \"States.Timeout\" ],\n                \"MaxAttempts\"\
-          : 0\n              },\n              {\n                \"ErrorEquals\"\
-          : [ \"States.ALL\" ],\n                \"MaxAttempts\": 1\n            \
-          \  }\n            ]\n        },\n        \"endSplitQueue\" : {\n       \
-          \     \"Type\" : \"Task\", \n${Param4}\n            \"End\" : true,\n  \
-          \          \"Retry\" : [\n              {\n                \"ErrorEquals\"\
-          : [ \"States.Timeout\" ],\n                \"MaxAttempts\": 0\n        \
-          \      },\n              {\n                \"ErrorEquals\": [ \"States.ALL\"\
-          \ ],\n                \"MaxAttempts\": 10\n              }\n           \
-          \ ]\n        }\n    }\n}"
-        - Param1: !Sub '            "Resource" : "${startSplitQueue.Arn}",'
-          Param2: !Sub '            "Resource" : "${stepSplitQueue.Arn}",'
-          Param3: !Sub '            "Resource" : "${datasetCleanup.Arn}",'
-          Param4: !Sub '            "Resource" : "${endSplitQueue.Arn}",'
+      DefinitionString: !Sub |
+          {
+            "StartAt": "startSplitQueue",
+            "States" : {
+              "startSplitQueue" : {
+                "Type" : "Task",
+                "Resource" : "${startSplitQueue.Arn}",
+                "Next" : "WaitChoice"
+              },
+              "WaitChoice" : {
+                "Type" : "Choice",
+                "Choices" : [
+                  { "Variable": "$.messageCount", "NumericGreaterThan" : 0, "Next": "QueueChoice" }
+                ],
+                "Default" : "QueueChoice"
+              },
+              "QueueChoice" : {
+                "Type" : "Choice",
+                "Choices" : [
+                  { "Variable": "$.messageCount", "NumericGreaterThan" : 0, "Next": "stepSplitQueue" }
+                ],
+                "Default" : "datasetCleanup"
+              },
+              "stepSplitQueue" : {
+                "Type" : "Task",
+                "Resource" : "${stepSplitQueue.Arn}",
+                "Next" : "QueueChoice",
+                "Catch": [ {
+                   "ErrorEquals" : ["States.ALL"],
+                   "Next": "endSplitQueue"
+                } ],
+                "Retry" : [
+                  {
+                    "ErrorEquals": [ "States.Timeout" ],
+                    "MaxAttempts" : 0
+                  },
+                  {
+                    "ErrorEquals": [ "States.ALL" ],
+                    "MaxAttempts": 1
+                  }
+                ]
+              },
+              "CleanupChoice" : {
+                "Type" : "Choice",
+                "Choices" : [
+                  { "Variable": "$.messageCount", "NumericGreaterThan": 0, "Next": "datasetCleanup" }
+                ],
+                "Default" : "endSplitQueue"
+              },
+              "datasetCleanup" : {
+                "Type" : "Task",
+                "Resource" : "${datasetCleanup.Arn}",
+                "Next" : "CleanupChoice",
+                "Catch": [ {
+                  "ErrorEquals" : ["States.ALL"],
+                  "Next": "endSplitQueue"
+                } ],
+                "Retry" : [ {
+                  "ErrorEquals": [ "States.Timeout" ],
+                  "MaxAttempts" : 0
+                },
+                {
+                  "ErrorEquals" : [ "States.ALL" ],
+                  "MaxAttempts": 1
+                } ]
+              },
+              "endSplitQueue" : {
+                "Type" : "Task",
+                "Resource" : "${endSplitQueue.Arn}",
+                "End" : true,
+                "Retry" : [ {
+                  "ErrorEquals" : [ "States.Timeout" ],
+                  "MaxAttempts": 0
+                },
+                {
+                  "ErrorEquals": [ "States.ALL" ],
+                  "MaxAttempts": 10
+                } ]
+              }
+            }
+          }
       RoleArn: !GetAtt 'StateSplitQueueRole.Arn'
   LambdaRunSplitQueueRole:
     Type: AWS::IAM::Role
     Properties:
       ManagedPolicyArns:
         - !Ref 'StartExecutionStateSplitQueue'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -229,6 +266,7 @@ Resources:
         - !Ref 'UpdateDataTableCapacity'
         - !Ref 'ConsumeSplitQueue'
         - !Ref 'ReadDatasets'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -242,6 +280,7 @@ Resources:
       ManagedPolicyArns:
         - !Ref 'UpdateDataTableCapacity'
         - !Ref 'ConsumeSplitQueue'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -258,6 +297,7 @@ Resources:
         - !Ref 'ReadDatasets'
         - !Ref 'WriteDatasets'
         - !Ref 'PublishSplitQueueTopic'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -271,6 +311,7 @@ Resources:
       ManagedPolicyArns:
         - !Ref 'WriteDatasets'
         - !Ref 'ReadDatasets'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -379,6 +420,14 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub '${AWS::StackName}-gator'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - '*'
+            AllowedMethods:
+              - 'GET'
+            AllowedOrigins:
+              - '*'
       LifecycleConfiguration:
         Rules:
           - ExpirationInDays: 2
@@ -430,6 +479,7 @@ Resources:
     Properties:
       ManagedPolicyArns:
         - !Ref 'ReadDatasets'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -441,31 +491,6 @@ Resources:
             Principal:
               Service: apigateway.amazonaws.com
             Action: sts:AssumeRole
-  GatordataLogWriterPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyName: GatordataLogWriterPolicy
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Action:
-              - logs:CreateLogGroup
-              - logs:CreateLogStream
-              - logs:PutLogEvents
-            Resource: arn:aws:logs:*:*:*
-      Roles:
-        - !Ref 'LambdaSplitFilesRole'
-        - !Ref 'LambdaReadAllDataRole'
-        - !Ref 'LambdaRunSplitQueueRole'
-        - !Ref 'LambdaStartSplitQueueRole'
-        - !Ref 'LambdaStepSplitQueueRole'
-        - !Ref 'LambdaEndSplitQueueRole'
-        - !Ref 'LambdaDatasetCleanupRole'
-    DependsOn:
-      - LambdaSplitFilesRole
-      - LambdaReadAllDataRole
-      - LambdaRunSplitQueueRole
   ReadUploaded:
     Type: AWS::IAM::ManagedPolicy
     Properties:
