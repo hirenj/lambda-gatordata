@@ -550,6 +550,7 @@ Resources:
               - !Sub 'arn:aws:s3:::${AWS::StackName}-gator/data/latest/*'
           - Effect: Allow
             Action:
+              - dynamodb:BatchGetItem
               - dynamodb:GetItem
               - dynamodb:Query
               - dynamodb:Scan
