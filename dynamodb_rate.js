@@ -221,7 +221,7 @@ const interval_uploader = function(uploader,data_table,queue) {
       console.log("Size of data too big for ",next_item.PutRequest.Item.acc," skipping ",JSON.stringify(next_item).length);
       next_item = queue.shift();
     }
-    if (next_item) {
+    if (next_item && next_item.PutRequest.Item.acc) {
       params.RequestItems[data_table].push( next_item );
       seen_keys.push(next_item.PutRequest.Item.acc);
     }
