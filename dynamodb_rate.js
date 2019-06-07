@@ -24,8 +24,9 @@ function JSONGrouper(size,options) {
 inherits(JSONGrouper, Transform);
 
 JSONGrouper.prototype._transform = function _transform(obj, encoding, callback) {
-
-  this.queue.push(obj);
+  if (obj.acc) {
+    this.queue.push(obj);
+  }
   if (this.queue.length >= this.size) {
     this.push([].concat(this.queue));
     this.queue.length = 0;
@@ -191,8 +192,10 @@ const interval_uploader = function(uploader,data_table,queue) {
         uploader.data.pause();
         uploader.total = (uploader.total || 0 ) + val.length;
         val.forEach(function(value) {
-          queue.push(value);
-          uploader.last_acc = value.PutRequest.Item.acc;
+          if (value.acc) {
+            queue.push(value);
+            uploader.last_acc = value.PutRequest.Item.acc;
+          }
         });
       }
       if (val && val.length == 0 && ! uploader.data.readable) {
