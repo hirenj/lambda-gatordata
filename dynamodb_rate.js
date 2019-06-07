@@ -23,6 +23,11 @@ function JSONGrouper(size,options) {
 
 inherits(JSONGrouper, Transform);
 
+JSONGrouper.prototype._flush = function _flush(callback) {
+  this.push([].concat(this.queue));
+  callback();
+};
+
 JSONGrouper.prototype._transform = function _transform(obj, encoding, callback) {
   if (obj.PutRequest.Item.acc) {
     this.queue.push(obj);
