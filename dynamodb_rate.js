@@ -24,7 +24,7 @@ function JSONGrouper(size,options) {
 inherits(JSONGrouper, Transform);
 
 JSONGrouper.prototype._transform = function _transform(obj, encoding, callback) {
-  if (obj.acc) {
+  if (obj.PutRequest.Item.acc) {
     this.queue.push(obj);
   }
   if (this.queue.length >= this.size) {
@@ -192,7 +192,7 @@ const interval_uploader = function(uploader,data_table,queue) {
         uploader.data.pause();
         uploader.total = (uploader.total || 0 ) + val.length;
         val.forEach(function(value) {
-          if (value.acc) {
+          if (value.PutRequest.Item.acc) {
             queue.push(value);
             uploader.last_acc = value.PutRequest.Item.acc;
           }
