@@ -176,7 +176,7 @@ var download_all_data_db_query = function(accession,grants,dataset) {
       '#title' : 'title',
       '#rdata' : 'rdata_file'
     },
-    ProjectionExpression : 'acc,dataset,group_ids,metadata.mimetype,metadata.#sample,metadata.#title,#rdata,metadata.quantitation'
+    ProjectionExpression : 'acc,dataset,group_ids,metadata.mimetype,metadata.#sample,metadata.#title,#rdata,metadata.quantitation,,metadata.channel_samples'
   };
   if (dataset) {
     params.KeyConditionExpression = 'acc = :acc and dataset = :dataset';
