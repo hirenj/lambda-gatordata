@@ -119,7 +119,7 @@ Resources:
       Role: !GetAtt 'LambdaReadAllDataRole.Arn'
       Runtime: nodejs8.10
       MemorySize: 1024
-      Timeout: 3
+      Timeout: 1
     DependsOn: LambdaReadAllDataRole
   LambdaSplitFilesRole:
     Type: AWS::IAM::Role
