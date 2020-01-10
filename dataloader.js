@@ -427,11 +427,6 @@ let startSplitQueue = function(event,context) {
     let counts = messages[0];
     let sets_to_remove = messages[1];
 
-    if (sets_to_remove.length > 0) {
-      console.log("Setting read capacity to",dataremover.MAX_READ_CAPACITY,"because we have",sets_to_remove.length,"sets to remove");
-      read_capacity = dataremover.MAX_READ_CAPACITY;
-    }
-
     if (counts[0] > 0) {
       throw new Error("Already running");
     }
