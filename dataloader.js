@@ -9,7 +9,7 @@ const zlib = require('zlib');
 const Queue = require('lambda-helpers').queue;
 const Events = require('lambda-helpers').events;
 
-const MetadataExtractor = require('./dynamodb_rate').MetadataExtractor;
+const MetadataExtractor = require('./MetadataExtractor').MetadataExtractor;
 const Offsetter = require('./dynamodb_rate').Offsetter;
 
 const dataremover = require('./dataremover');

@@ -41,45 +41,6 @@ JSONGrouper.prototype._transform = function _transform(obj, encoding, callback) 
 
 };
 
-function MetadataExtractor(options) {
-  if ( ! (this instanceof MetadataExtractor))
-    return new MetadataExtractor(options);
-
-  if (! options) options = {};
-  options.objectMode = true;
-  let self = this;
-  let Parser = require('JSONStream/node_modules/jsonparse');
-  let p = new Parser();
-
-  this.parser = p;
-
-  p.push = function(){
-    if (this.stack && this.stack[1] && this.stack[1].key == 'data') {
-      this.value = null;
-    }
-    this.stack.push({value: this.value, key: this.key, mode: this.mode});
-  };
-
-  p.onValue = function(val) {
-    if (! val) {
-      return;
-    }
-    if (val.metadata) {
-      self.metadata = val.metadata;
-      self.push(val.metadata);
-    }
-  };
-
-  Transform.call(this, options);
-}
-
-inherits(MetadataExtractor, Transform);
-
-MetadataExtractor.prototype._transform = function _transform(obj, encoding, callback) {
-  this.parser.write(obj);
-  callback();
-};
-
 
 function Offsetter(offset,options) {
   if ( ! (this instanceof Offsetter))
@@ -336,7 +297,6 @@ class Uploader {
   }
 }
 
-exports.MetadataExtractor = MetadataExtractor;
 exports.Offsetter = Offsetter;
 
 exports.createUploadPipe = function(table,setid,groupid,offset) {
