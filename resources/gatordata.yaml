@@ -33,7 +33,7 @@ Resources:
       Description: splitFiles
       Handler: index.splitFiles
       Role: !GetAtt 'LambdaSplitFilesRole.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 256
       Timeout: 300
     DependsOn: LambdaSplitFilesRole
@@ -48,7 +48,7 @@ Resources:
         Variables:
           DEFAULT_READ_CAPACITY: !Ref 'DEFAULTREADCAPACITY'
       Role: !GetAtt 'LambdaRunSplitQueueRole.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 128
       Timeout: 60
     DependsOn: LambdaRunSplitQueueRole
@@ -63,7 +63,7 @@ Resources:
         Variables:
           DEFAULT_READ_CAPACITY: !Ref 'DEFAULTREADCAPACITY'
       Role: !GetAtt 'LambdaStartSplitQueueRole.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 128
       Timeout: 60
     DependsOn: LambdaStartSplitQueueRole
@@ -78,7 +78,7 @@ Resources:
         Variables:
           DEFAULT_READ_CAPACITY: !Ref 'DEFAULTREADCAPACITY'
       Role: !GetAtt 'LambdaStepSplitQueueRole.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 512
       Timeout: 900
     DependsOn: LambdaStepSplitQueueRole
@@ -93,7 +93,7 @@ Resources:
         Variables:
           DEFAULT_READ_CAPACITY: !Ref 'DEFAULTREADCAPACITY'
       Role: !GetAtt 'LambdaEndSplitQueueRole.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 128
       Timeout: 60
     DependsOn: LambdaEndSplitQueueRole
@@ -105,7 +105,7 @@ Resources:
       Description: datasetCleanup
       Handler: index.datasetCleanup
       Role: !GetAtt 'LambdaDatasetCleanupRole.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 512
       Timeout: 300
     DependsOn: LambdaDatasetCleanupRole
@@ -117,7 +117,7 @@ Resources:
       Description: readAllData
       Handler: index.readAllData
       Role: !GetAtt 'LambdaReadAllDataRole.Arn'
-      Runtime: nodejs8.10
+      Runtime: !Ref nodejsversion
       MemorySize: 1024
       Timeout: 1
     DependsOn: LambdaReadAllDataRole
