@@ -4,6 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "build": "webpack-cli",
+    "deploy": "STACK=test AWS_REGION=us-east-1 ./node_modules/gator-webpack/scripts/deploy.sh",
     "lint": "node ./node_modules/jshint/bin/jshint index.js lambdas/*",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
