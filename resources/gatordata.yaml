@@ -118,6 +118,8 @@ Resources:
       Handler: index.readAllData
       Role: !GetAtt 'LambdaReadAllDataRole.Arn'
       Runtime: !Ref nodejsversion
+      TracingConfig:
+        Mode: !If [tracing, 'Active', 'PassThrough']
       MemorySize: 1024
       Timeout: 1
     DependsOn: LambdaReadAllDataRole
@@ -480,6 +482,17 @@ Resources:
       ManagedPolicyArns:
         - !Ref 'ReadDatasets'
         - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: AllowTracing
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowTracing
+                Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: '*'
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
